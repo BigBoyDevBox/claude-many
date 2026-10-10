@@ -21,11 +21,12 @@ pins it). Deployment target is macOS 14+. The project is a plain
 
 ## Architecture
 
-- Mechanism: Claude Desktop never calls `requestSingleInstanceLock` and
-  honors `CLAUDE_USER_DATA_DIR` (relocates userData + Logs). The app spawns
-  `/Applications/Claude.app/Contents/MacOS/Claude` with that variable set
-  per profile. Evidence and design are in README.md ("How it works"); keep
-  it accurate when the mechanism changes.
+- Mechanism: launch `/Applications/Claude.app/Contents/MacOS/Claude` with
+  `--user-data-dir=<profile>`. Packaged Claude ignores `CLAUDE_USER_DATA_DIR`.
+  `CLAUDE_CONFIG_DIR` and `CLAUDE_SECURESTORAGE_CONFIG_DIR` point to the
+  profile's `.claude/`; discovery matches argv, never the legacy environment.
+  Evidence, callback/pairing limits, and upgrade behavior are in README.md
+  ("How it works"). Keep them accurate when the mechanism changes.
 - `claude-many/Models/` owns the testable core: `ProfileStore`
   (persistence), `ProfileManager` (start/stop, injected launcher),
   `ClaudeProcess`, `ClaudeProfile`. `claude-many/Views/` is SwiftUI only.

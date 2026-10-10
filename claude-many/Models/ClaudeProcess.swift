@@ -5,7 +5,7 @@ import Foundation
 protocol ClaudeProcessHandle: AnyObject, Sendable {
     var processIdentifier: Int32 { get }
     var isRunning: Bool { get }
-    /// The data directory this process runs with (CLAUDE_USER_DATA_DIR), when known.
+    /// The data directory selected by --user-data-dir, when known.
     var dataDirectory: URL? { get }
     /// Called (on an arbitrary queue) when the process exits on its own.
     var terminationHandler: (@Sendable () -> Void)? { get set }
@@ -18,25 +18,24 @@ protocol ClaudeProcessHandle: AnyObject, Sendable {
 /// Spawns `Process` instances. Injected into `ProfileManager`; tests replace
 /// this with a fake that records launches.
 protocol ClaudeLauncher: Sendable {
-    func launch(executable: URL, environment: [String: String]) throws -> ClaudeProcessHandle
-    /// Live handles for processes running `executable` with CLAUDE_USER_DATA_DIR set.
+    func launch(executable: URL, dataDirectory: URL) throws -> ClaudeProcessHandle
+    /// Live handles for processes running `executable` with --user-data-dir set.
     func runningHandles(executable: URL) -> [ClaudeProcessHandle]
 }
 
 /// Real launcher backed by Foundation's `Process`.
 struct RealClaudeLauncher: ClaudeLauncher {
-    func launch(executable: URL, environment: [String: String]) throws -> ClaudeProcessHandle {
+    func launch(executable: URL, dataDirectory: URL) throws -> ClaudeProcessHandle {
+        let configuration = ClaudeLaunchConfiguration(dataDirectory: dataDirectory)
+        try FileManager.default.createDirectory(
+            at: configuration.codeConfigurationDirectory,
+            withIntermediateDirectories: true
+        )
+
         let process = Process()
         process.executableURL = executable
-
-        // Foundation's Process inherits the parent environment when left nil,
-        // but replacing it wholesale with a merged copy is more predictable
-        // (keeps PATH etc. while adding CLAUDE_USER_DATA_DIR).
-        var env = ProcessInfo.processInfo.environment
-        for (key, value) in environment {
-            env[key] = value
-        }
-        process.environment = env
+        process.arguments = configuration.arguments
+        process.environment = configuration.environment(inheriting: ProcessInfo.processInfo.environment)
 
         // Claude's output is not ours; keep it off the console.
         process.standardOutput = FileHandle.nullDevice
@@ -45,29 +44,25 @@ struct RealClaudeLauncher: ClaudeLauncher {
         try process.run()
         return RealClaudeProcess(
             process: process,
-            dataDirectory: environment["CLAUDE_USER_DATA_DIR"].map {
-                URL(fileURLWithPath: $0, isDirectory: true)
-            }
+            dataDirectory: dataDirectory
         )
     }
 
-    /// Discovers live processes running `executable` whose environment carries
-    /// `CLAUDE_USER_DATA_DIR`, so the manager can adopt instances left over
-    /// from a previous app run. macOS exposes the environment for app
-    /// processes (but not CLI tools), which is exactly the population matched.
+    /// Adopt only argv-selected profiles. Signed Claude builds discard the old
+    /// environment override, so an env-only process may actually use the default profile.
     func runningHandles(executable: URL) -> [ClaudeProcessHandle] {
         let target = executable.resolvingSymlinksInPath().path
         var result: [ClaudeProcessHandle] = []
         for (pid, startTime) in Self.allProcesses() {
             guard let info = Self.processInfo(for: pid),
                   Self.executableMatches(info.executablePath, target: target),
-                  let dataDir = info.environment["CLAUDE_USER_DATA_DIR"] else {
+                  let dataDirectory = ClaudeLaunchConfiguration.dataDirectory(in: info.arguments) else {
                 continue
             }
             result.append(AttachedClaudeProcess(
                 pid: pid,
                 startTime: startTime,
-                dataDirectory: URL(fileURLWithPath: dataDir, isDirectory: true)
+                dataDirectory: dataDirectory
             ))
         }
         return result
@@ -75,19 +70,25 @@ struct RealClaudeLauncher: ClaudeLauncher {
 
     // MARK: Process introspection
 
-    private struct ProcessSnapshot {
-        let executablePath: String
-        let environment: [String: String]
-    }
+    private static let processTableReadAttempts = 3
 
     private static func allProcesses() -> [(pid: Int32, startTime: timeval)] {
-        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0]
-        var size = 0
-        guard sysctl(&mib, u_int(mib.count), nil, &size, nil, 0) == 0, size > 0 else { return [] }
-        let count = size / MemoryLayout<kinfo_proc>.size
-        var procs = [kinfo_proc](repeating: kinfo_proc(), count: count)
-        guard sysctl(&mib, u_int(mib.count), &procs, &size, nil, 0) == 0 else { return [] }
-        return procs.map { ($0.kp_proc.p_pid, $0.kp_proc.p_un.__p_starttime) }
+        // The process table can grow between sizing and reading. Retry that race.
+        for _ in 0..<processTableReadAttempts {
+            var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0]
+            var size = 0
+            guard sysctl(&mib, u_int(mib.count), nil, &size, nil, 0) == 0, size > 0 else { return [] }
+            let count = size / MemoryLayout<kinfo_proc>.size
+            var procs = [kinfo_proc](repeating: kinfo_proc(), count: count)
+            guard sysctl(&mib, u_int(mib.count), &procs, &size, nil, 0) == 0 else {
+                if errno == ENOMEM { continue }
+                return []
+            }
+
+            let populatedCount = size / MemoryLayout<kinfo_proc>.size
+            return procs.prefix(populatedCount).map { ($0.kp_proc.p_pid, $0.kp_proc.p_un.__p_starttime) }
+        }
+        return []
     }
 
     /// The kernel-reported start time of a PID, or nil if no such process
@@ -101,39 +102,15 @@ struct RealClaudeLauncher: ClaudeLauncher {
         return proc.kp_proc.p_un.__p_starttime
     }
 
-    /// Reads a process's executable path and environment via KERN_PROCARGS2.
-    private static func processInfo(for pid: Int32) -> ProcessSnapshot? {
+    /// Reads argv as null-terminated entries, preserving spaces in profile paths.
+    private static func processInfo(for pid: Int32) -> ClaudeProcessSnapshot? {
         var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
         var size = 0
         guard sysctl(&mib, u_int(mib.count), nil, &size, nil, 0) == 0, size > 0 else { return nil }
         var buffer = [UInt8](repeating: 0, count: size)
         guard sysctl(&mib, u_int(mib.count), &buffer, &size, nil, 0) == 0 else { return nil }
 
-        let argc = buffer.withUnsafeBytes { $0.loadUnaligned(as: Int32.self) }
-        var index = 4
-        guard let execEnd = buffer[index...].firstIndex(of: 0) else { return nil }
-        let executablePath = String(decoding: buffer[index..<execEnd], as: UTF8.self)
-        index = execEnd + 1
-        while index < buffer.count && buffer[index] == 0 { index += 1 }
-
-        var argumentCount = 0
-        while index < buffer.count && argumentCount < argc {
-            guard let end = buffer[index...].firstIndex(of: 0) else { return nil }
-            index = end + 1
-            argumentCount += 1
-        }
-
-        var environment: [String: String] = [:]
-        while index < buffer.count {
-            guard let end = buffer[index...].firstIndex(of: 0) else { break }
-            if end == index { break }
-            let entry = String(decoding: buffer[index..<end], as: UTF8.self)
-            if let equals = entry.firstIndex(of: "=") {
-                environment[String(entry[..<equals])] = String(entry[entry.index(after: equals)...])
-            }
-            index = end + 1
-        }
-        return ProcessSnapshot(executablePath: executablePath, environment: environment)
+        return ClaudeProcessSnapshot(buffer: Array(buffer.prefix(size)))
     }
 
     /// The kernel appends " (deleted)" to the path of a binary that was

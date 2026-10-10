@@ -8,7 +8,7 @@ import XCTest
 final class FakeClaudeLauncher: ClaudeLauncher, @unchecked Sendable {
     struct LaunchRecord: Equatable {
         let executable: URL
-        let environment: [String: String]
+        let dataDirectory: URL
     }
 
     private(set) var launches: [LaunchRecord] = []
@@ -21,10 +21,10 @@ final class FakeClaudeLauncher: ClaudeLauncher, @unchecked Sendable {
     /// returns (it exited before the manager could attach its handler).
     var launchReturnsDeadHandle = false
 
-    func launch(executable: URL, environment: [String: String]) throws -> ClaudeProcessHandle {
+    func launch(executable: URL, dataDirectory: URL) throws -> ClaudeProcessHandle {
         if let shouldThrow { throw shouldThrow }
-        launches.append(LaunchRecord(executable: executable, environment: environment))
-        let handle = FakeClaudeProcess()
+        launches.append(LaunchRecord(executable: executable, dataDirectory: dataDirectory))
+        let handle = FakeClaudeProcess(dataDirectory: dataDirectory)
         launchedHandles.append(handle)
         if launchReturnsDeadHandle {
             handle.simulateExit()
@@ -185,7 +185,7 @@ final class ProfileManagerTests: XCTestCase {
         XCTAssertFalse(manager.isRunning(id: profile.id))
     }
 
-    func testStartLaunchesWithClaudeUserDataDirEnvironment() throws {
+    func testStartLaunchesWithProfileDataDirectory() throws {
         try makeBundle()
         let profile = try manager.addProfile(named: "Env Check")
         try manager.start(id: profile.id)
@@ -195,7 +195,7 @@ final class ProfileManagerTests: XCTestCase {
         let record = try XCTUnwrap(launcher.launches.first)
         XCTAssertEqual(record.executable.path,
                        tempDir.appendingPathComponent("Claude.app/Contents/MacOS/Claude").path)
-        XCTAssertEqual(record.environment["CLAUDE_USER_DATA_DIR"], profile.dataDirectory.path)
+        XCTAssertEqual(record.dataDirectory, profile.dataDirectory)
     }
 
     func testStartCreatesDataDirectoryLazily() throws {
@@ -347,6 +347,20 @@ final class ProfileManagerTests: XCTestCase {
         XCTAssertFalse(reloaded.isRunning(id: profile.id),
                        "a process owning a different data dir must not mark the profile running")
         XCTAssertEqual(launcher.launches.count, 0)
+    }
+
+    func testLoadMatchesEquivalentDataDirectoryPaths() throws {
+        let profile = try manager.addProfile(named: "Work")
+        let equivalent = profile.dataDirectory.deletingLastPathComponent()
+            .appendingPathComponent("unused/../work", isDirectory: true)
+        launcher.runningHandlesToReturn = [FakeClaudeProcess(dataDirectory: equivalent)]
+
+        let reloaded = makeManager()
+        reloaded.load()
+
+        XCTAssertTrue(reloaded.isRunning(id: profile.id))
+        XCTAssertEqual(reloaded.profiles.first?.dataDirectory, profile.dataDirectory,
+                       "matching must not rewrite the persisted path")
     }
 
     // MARK: Persistence across instances
