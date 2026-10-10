@@ -1,8 +1,12 @@
 # Xcode
 .build/
+build/
 DerivedData/
 xcuserdata/
 *.xcuserstate
+
+# Release packaging
+release/
 
 # macOS
 .DS_Store

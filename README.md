@@ -17,8 +17,8 @@ directory per profile and launches Claude Desktop pointed at it.
   `~/Library/Application Support/Claude-Many/Profiles/<slug>/`. That
   directory holds that instance's login tokens, cookies, config, and
   sessions, so each instance logs in and stays logged in independently.
-- **Native look** — SwiftUI, macOS 14+, arm64. Ad-hoc signed, no developer
-  account required.
+- **Native look** — SwiftUI, macOS 14+, universal binary. Ad-hoc signed, no
+  developer account required.
 
 ## How it works
 
@@ -46,21 +46,16 @@ any separately launched Claude Desktop instances are unaffected.
 
 ## Build
 
-Requires Xcode (developed with Xcode 26.6 / Swift 6.3.3 on macOS 26, arm64;
-deployment target is macOS 14+).
+Requires Xcode (developed with Xcode 26.6 / Swift 6.3.3 on macOS 26;
+deployment target is macOS 14+). The app is **ad-hoc signed** — no
+developer account, no notarization.
 
 ```sh
-xcodebuild -project claude-many.xcodeproj -scheme claude-many \
-  -configuration Debug -destination 'platform=macOS' build
+scripts/build.sh            # runs the unit tests, then builds build/claude-many.app
+scripts/build.sh --install  # also installs to /Applications
 ```
 
-The app is **ad-hoc signed** (no developer account, no notarization):
-
-```sh
-codesign --force --deep -s - "path/to/build/Products/Debug/claude-many.app"
-```
-
-Run it from Xcode, or `open` the built app.
+Or open `claude-many.xcodeproj` in Xcode and run the `claude-many` scheme.
 
 ## Usage
 
@@ -107,11 +102,11 @@ xcodebuild -project claude-many.xcodeproj -scheme claude-many \
 
 ## Developing
 
-Contributions use a jj-based workflow in isolated jjhouse workspaces (no raw
-git writes): see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the full
-developer guide — prerequisites, the repository model (colocated jj + git,
-`base = "main"`), the jj bookmark → push → PR loop, and the build/test
-commands above (including the gated live smoke test).
+Standard branch → pull request flow on `main`; CI runs the unit tests and a
+universal Release build on every push. `scripts/release.sh X.Y.Z --push`
+cuts a tagged release that GitHub Actions turns into ZIP and DMG assets on
+a draft GitHub release. The gated live smoke test is described under
+[Tests](#tests).
 
 ## Behavior notes
 

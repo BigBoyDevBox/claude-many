@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  native-macos:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: bash -n scripts/*.sh
+      # Runs the unit tests, builds the universal Release app and verifies its
+      # signature. The gated live smoke test stays off: no real Claude Desktop.
+      - run: scripts/build.sh --clean
+      - run: test -x build/claude-many.app/Contents/MacOS/claude-many
+      - run: codesign --verify --strict build/claude-many.app
+      - name: Check universal binary
+        run: |
+          lipo -archs build/claude-many.app/Contents/MacOS/claude-many | grep -q arm64
+          lipo -archs build/claude-many.app/Contents/MacOS/claude-many | grep -q x86_64
