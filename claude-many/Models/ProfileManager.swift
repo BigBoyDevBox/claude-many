@@ -75,15 +75,16 @@ final class ProfileManager {
     }
 
     /// Adopts Claude instances left over from a previous app run: any live
-    /// process whose CLAUDE_USER_DATA_DIR matches a profile's data directory
+    /// process whose --user-data-dir matches a profile's data directory
     /// is tracked as that profile's running instance, so Start cannot spawn a
     /// duplicate into a data directory that is still in use.
     private func reconcileRunningProcesses() {
         let executable = claudeBundleURL.appendingPathComponent("Contents/MacOS/Claude")
         for handle in launcher.runningHandles(executable: executable) {
             guard let dataDirectory = handle.dataDirectory else { continue }
+            let directory = dataDirectory.standardizedFileURL.resolvingSymlinksInPath().path
             guard let profile = profiles.first(where: {
-                $0.dataDirectory.path == dataDirectory.path
+                $0.dataDirectory.standardizedFileURL.resolvingSymlinksInPath().path == directory
             }) else { continue }
             guard handles[profile.id] == nil else { continue }
             attach(handle: handle, to: profile.id)
@@ -133,9 +134,7 @@ final class ProfileManager {
         runningProfileIDs.contains(id)
     }
 
-    /// Launches Claude for the profile with `CLAUDE_USER_DATA_DIR` pointed at
-    /// the profile's private directory, so this instance logs in independently
-    /// of every other profile.
+    /// Launches Claude with private Desktop storage and Claude Code configuration.
     func start(id: UUID) throws {
         guard let profile = profiles.first(where: { $0.id == id }) else {
             throw ProfileManagerError.profileNotFound
@@ -165,7 +164,7 @@ final class ProfileManager {
             .appendingPathComponent("Contents/MacOS/Claude")
         let handle = try launcher.launch(
             executable: executable,
-            environment: ["CLAUDE_USER_DATA_DIR": profile.dataDirectory.path]
+            dataDirectory: profile.dataDirectory
         )
         attach(handle: handle, to: id)
         lastError = nil

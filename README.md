@@ -17,28 +17,28 @@ directory per profile and launches Claude Desktop pointed at it.
   `~/Library/Application Support/Claude-Many/Profiles/<slug>/`. That
   directory holds that instance's login tokens, cookies, config, and
   sessions, so each instance logs in and stays logged in independently.
+- **Separate Code configuration** — each profile uses its own `.claude/`
+  directory for Claude Code settings, history, plugins, and credentials.
 - **Native look** — SwiftUI, macOS 14+, universal binary. Ad-hoc signed, no
   developer account required.
 
 ## How it works
 
-Claude Desktop (`/Applications/Claude.app`) is an Electron app. Two verified
-facts about its bundle make this possible:
+Claude Desktop (`/Applications/Claude.app`) is an Electron app. claude-many
+spawns `/Applications/Claude.app/Contents/MacOS/Claude` directly with
+`--user-data-dir=<profile directory>` to select independent Desktop storage.
+It also sets `CLAUDE_CONFIG_DIR` and `CLAUDE_SECURESTORAGE_CONFIG_DIR` to
+`<profile directory>/.claude`, keeping Code configuration and its credential
+namespace separate. Process discovery reads the directory from argv, so
+restarting claude-many can adopt instances it previously launched.
 
-1. **It never calls Electron's `requestSingleInstanceLock`**, so multiple
-   instances of Claude Desktop can run at the same time. (Confirmed by
-   searching the entire `app.asar` payload: zero occurrences.)
-2. **It honors the `CLAUDE_USER_DATA_DIR` environment variable**, relocating
-   its entire userData directory. The bundle contains
-   `if (process.env.CLAUDE_USER_DATA_DIR) { app.setPath('userData', e);
-   app.setPath('logs', resolve(e, 'Logs')) }` — the directory that holds
-   login tokens, cookies, config, and sessions.
-
-So claude-many spawns the binary directly —
-`/Applications/Claude.app/Contents/MacOS/Claude` — with `CLAUDE_USER_DATA_DIR`
-set to the profile's directory. The first launch of a fresh profile shows a
-login screen inside that instance only. From then on, each profile opens
-directly into its own logged-in session, window by window, side by side.
+Current packaged Claude builds discard `CLAUDE_USER_DATA_DIR`; the launcher
+removes that legacy variable even when inherited. This startup policy was
+inspected in Claude Desktop **2.31226.1** from the official
+[Mac release feed](https://downloads.claude.ai/releases/darwin/universal/RELEASES.json).
+`--user-data-dir` is an Electron/Chromium switch, not a documented Claude
+Desktop profile API. Updates can change its behavior. The live smoke test
+checks the installed app; it does not verify signing in or running Code tasks.
 
 Stopping a profile sends SIGTERM to its process (with a SIGKILL fallback
 after 5 seconds), terminating only that instance — other profiles and
@@ -59,13 +59,18 @@ Or open `claude-many.xcodeproj` in Xcode and run the `claude-many` scheme.
 
 ## Usage
 
-1. Launch claude-many and click **+** to add a profile, e.g. "Work".
-2. Click **Start** next to the profile. A Claude Desktop window opens for
-   that profile and asks you to log in — sign into that account once.
-3. Repeat for each additional account: add a profile, start it, log in.
-   Each instance is a separate window, side by side, independently logged in.
-4. Click **Stop** on a profile to quit that instance (its login is preserved
-   for next time).
+1. Quit other Claude instances before signing in to a new profile. Browser
+   sign-in and connector callbacks can otherwise reach the wrong instance.
+2. Launch claude-many and click **+** to add a profile, e.g. "Work".
+3. Click **Start**, sign into that account, then **Stop** it before setting
+   up another profile. Check which account your browser is signed into.
+4. Once each profile is signed in, start them together to work side by side.
+   **Stop** quits that instance and preserves its login for next time.
+
+When upgrading from the environment-variable launcher, quit existing Claude
+instances first. Desktop profile directories and logins are reused. Each
+profile's Code configuration starts fresh; existing shared `~/.claude`
+settings and history stay on disk and are not copied automatically.
 
 Other controls: the **⋯** menu renames or deletes a profile. Deleting only
 removes it from the list — the data directory stays on disk so nothing is
@@ -75,14 +80,21 @@ Settings (⌘,) lets you change the Claude.app path if it is not installed in
 
 ## Tests
 
-Unit tests cover the profile store and manager logic (add/remove/rename,
-persistence, start/stop state transitions) with an injected fake launcher,
-so the core is tested without launching Claude:
+Tests cover the profile store and manager, launch environment, and argv
+parsing. Recording subprocesses check the actual launch arguments and macOS
+process discovery without opening Claude:
 
 ```sh
 xcodebuild -project claude-many.xcodeproj -scheme claude-many \
   -destination 'platform=macOS' test
 ```
+
+For account-level verification, sign into two scratch profiles one at a time,
+then run a Code session in each. Check each account in Desktop, confirm that
+settings/history remain separate, restart claude-many while both are open,
+and verify that Start does not duplicate them and Stop affects only its
+profile. Repeat after a Claude update. This check requires real accounts and
+is not run by CI.
 
 A **live smoke test** (in `claude-manyTests/SmokeTests.swift`) launches two
 real Claude instances against throwaway scratch directories under `/tmp`,
@@ -112,18 +124,24 @@ a draft GitHub release. The gated live smoke test is described under
 
 - **Auto-updates apply to every profile.** The Claude.app bundle is shared;
   an update replaces the binary all profiles launch. Profile data is
-  unaffected (it lives in per-profile directories).
-- **All account data lives in per-profile directories** under
-  `~/Library/Application Support/Claude-Many/Profiles/<slug>/` and never
-  leaves the machine. Nothing is ever written to the shared
-  `~/Library/Application Support/Claude` folder.
+  retained, but an updater relaunch may drop profile arguments. Quit profile
+  instances before updating and reopen them through claude-many afterwards.
+- **Managed local storage is per profile**, under
+  `~/Library/Application Support/Claude-Many/Profiles/<slug>/`, with Code
+  configuration in `.claude/`. claude-many does not copy or modify your
+  default Desktop or Code profile. Claude's cloud data remains account-bound.
+  Removing a profile directory manually also removes its Code configuration.
+- **Local device pairing is disabled for relocated Desktop data directories**
+  in Claude Desktop 2.31226.1. Other shared app services, such as Dock
+  identity, sign-in callbacks, and logs, are not isolated by this launcher.
 - **No fixed limit** on the number of profiles beyond disk space and memory.
-- **Restarting the app never double-starts a profile.** If claude-many is
+- **Restarting the app adopts matching live profiles.** If claude-many is
   quit while instances are still running, the next launch detects each
   profile's live instance (by its data directory), shows it as running, and
   refuses to start a second one into that data directory until the first has
   actually exited. Starting a profile right after stopping it is likewise
   refused until the previous instance has fully shut down.
+  Discovery is best-effort when macOS cannot read a process snapshot.
 - Claude Desktop's own settings (theme, etc.) are per profile too, since
   they are part of the userData directory.
 
