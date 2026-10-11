@@ -86,8 +86,11 @@ final class ClaudeLauncherTests: XCTestCase {
         let legacy = Process()
         legacy.executableURL = executable
         legacy.environment = ["CLAUDE_USER_DATA_DIR": directory.path]
+        let standard = Process()
+        standard.executableURL = executable
+        standard.environment = [:]
         defer {
-            for process in [isolated, other, legacy] where process.isRunning {
+            for process in [isolated, other, legacy, standard] where process.isRunning {
                 process.terminate()
                 process.waitUntilExit()
             }
@@ -96,9 +99,13 @@ final class ClaudeLauncherTests: XCTestCase {
         try isolated.run()
         try other.run()
         try legacy.run()
+        try standard.run()
         let handles = RealClaudeLauncher().runningHandles(executable: executable)
         XCTAssertEqual(Set(handles.map(\.processIdentifier)),
-                       [isolated.processIdentifier, other.processIdentifier])
+                       [isolated.processIdentifier, other.processIdentifier, standard.processIdentifier])
+        let standardHandle = handles.first { $0.processIdentifier == standard.processIdentifier }
+        XCTAssertNotNil(standardHandle, "the ordinary Claude instance must be visible without a directory override")
+        XCTAssertNil(standardHandle?.dataDirectory)
         let workHandle = try XCTUnwrap(handles.first { $0.processIdentifier == isolated.processIdentifier })
         XCTAssertEqual(workHandle.dataDirectory?.path, directory.path)
 
@@ -107,6 +114,7 @@ final class ClaudeLauncherTests: XCTestCase {
         XCTAssertFalse(workHandle.isRunning)
         XCTAssertTrue(other.isRunning, "stopping an adopted profile must leave other profiles alive")
         XCTAssertTrue(legacy.isRunning, "legacy env-only instances must not be adopted or stopped")
+        XCTAssertTrue(standard.isRunning, "stopping an isolated profile must leave the default instance alive")
     }
 
     private func output(_ name: String, executable: URL) throws -> String {
