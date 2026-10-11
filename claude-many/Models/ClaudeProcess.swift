@@ -82,9 +82,11 @@ struct RealClaudeLauncher: ClaudeLauncher {
     // MARK: Process introspection
 
     private static let processTableReadAttempts = 3
+    // libproc defines PROC_PIDPATHINFO_MAXSIZE as 4 * MAXPATHLEN; Swift does not import that macro.
+    private static let processPathBufferCapacity = 4 * Int(MAXPATHLEN)
 
     private static func executablePath(for pid: Int32) -> String? {
-        let capacity = UInt32(PROC_PIDPATHINFO_MAXSIZE)
+        let capacity = UInt32(Self.processPathBufferCapacity)
         var buffer = [CChar](repeating: 0, count: Int(capacity))
         let length = proc_pidpath(pid, &buffer, capacity)
         guard length > 0 else { return nil }
