@@ -16,7 +16,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "A00000000000000000000010"
-               BuildableName = "claude-many.app"
+               BuildableName = "Claude Replicant.app"
                BlueprintName = "claude-many"
                ReferencedContainer = "container:claude-many.xcodeproj">
             </BuildableReference>
@@ -72,7 +72,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "A00000000000000000000010"
-            BuildableName = "claude-many.app"
+            BuildableName = "Claude Replicant.app"
             BlueprintName = "claude-many"
             ReferencedContainer = "container:claude-many.xcodeproj">
          </BuildableReference>
@@ -89,7 +89,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "A00000000000000000000010"
-            BuildableName = "claude-many.app"
+            BuildableName = "Claude Replicant.app"
             BlueprintName = "claude-many"
             ReferencedContainer = "container:claude-many.xcodeproj">
          </BuildableReference>

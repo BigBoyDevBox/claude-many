@@ -7,8 +7,8 @@ pins it). Deployment target is macOS 14+. The project is a plain
 `claude-many.xcodeproj` — no XcodeGen or SwiftPM manifest to regenerate.
 
 - `scripts/build.sh [--clean] [--run] [--install]` runs the unit tests,
-  builds a universal Release app into `build/claude-many.app` and ad-hoc
-  signs it. `--install` replaces `/Applications/claude-many.app`.
+  builds a universal Release app into `build/Claude Replicant.app` and ad-hoc
+  signs it. `--install` replaces `/Applications/Claude Replicant.app`.
 - `scripts/release.sh X.Y.Z [--push]` bumps `MARKETING_VERSION` and
   `CURRENT_PROJECT_VERSION` in `project.pbxproj`, verifies, commits, and
   tags.
@@ -21,6 +21,11 @@ pins it). Deployment target is macOS 14+. The project is a plain
 
 ## Architecture
 
+- Branding: Claude Replicant, executable `claude-replicant`. The project,
+  scheme, Swift module, bundle identifier, and `Claude-Many` storage paths
+  retain their existing names to preserve upgrades and hosted tests.
+- Icon master: `media-sources/app-icon.png`; regenerate the committed Xcode
+  icon sizes with `python3 scripts/generate-icons.py` (requires Pillow).
 - Mechanism: launch `/Applications/Claude.app/Contents/MacOS/Claude` with
   `--user-data-dir=<profile>`. Packaged Claude ignores `CLAUDE_USER_DATA_DIR`.
   `CLAUDE_CONFIG_DIR` and `CLAUDE_SECURESTORAGE_CONFIG_DIR` point to the

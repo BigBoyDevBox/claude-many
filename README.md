@@ -1,4 +1,8 @@
-# claude-many
+# Claude Replicant
+
+*Give Claude the Double Impact.*
+
+<img src="media-sources/app-icon.png" alt="Claude Replicant icon with paired JCVD portraits" width="160" align="right">
 
 Run multiple Claude Desktop instances side by side on one Mac, each logged
 into a different account. There is no fixed limit — you add one profile per
@@ -24,13 +28,13 @@ directory per profile and launches Claude Desktop pointed at it.
 
 ## How it works
 
-Claude Desktop (`/Applications/Claude.app`) is an Electron app. claude-many
+Claude Desktop (`/Applications/Claude.app`) is an Electron app. Claude Replicant
 spawns `/Applications/Claude.app/Contents/MacOS/Claude` directly with
 `--user-data-dir=<profile directory>` to select independent Desktop storage.
 It also sets `CLAUDE_CONFIG_DIR` and `CLAUDE_SECURESTORAGE_CONFIG_DIR` to
 `<profile directory>/.claude`, keeping Code configuration and its credential
 namespace separate. Process discovery reads the directory from argv, so
-restarting claude-many can adopt instances it previously launched.
+restarting Claude Replicant can adopt instances it previously launched.
 
 Current packaged Claude builds discard `CLAUDE_USER_DATA_DIR`; the launcher
 removes that legacy variable even when inherited. This startup policy was
@@ -51,17 +55,23 @@ deployment target is macOS 14+). The app is **ad-hoc signed** — no
 developer account, no notarization.
 
 ```sh
-scripts/build.sh            # runs the unit tests, then builds build/claude-many.app
+scripts/build.sh            # runs tests, then builds build/Claude Replicant.app
 scripts/build.sh --install  # also installs to /Applications
 ```
 
 Or open `claude-many.xcodeproj` in Xcode and run the `claude-many` scheme.
+The executable is `claude-replicant`. The project, scheme, Swift module, and
+bundle identifier keep their legacy names so hosted tests and upgrades
+continue to work.
+
+The icon master is `media-sources/app-icon.png`. To regenerate the Xcode icon
+sizes, run `python3 scripts/generate-icons.py` with Pillow installed.
 
 ## Usage
 
 1. Quit other Claude instances before signing in to a new profile. Browser
    sign-in and connector callbacks can otherwise reach the wrong instance.
-2. Launch claude-many and click **+** to add a profile, e.g. "Work".
+2. Launch Claude Replicant and click **+** to add a profile, e.g. "Work".
 3. Click **Start**, sign into that account, then **Stop** it before setting
    up another profile. Check which account your browser is signed into.
 4. Once each profile is signed in, start them together to work side by side.
@@ -71,6 +81,10 @@ When upgrading from the environment-variable launcher, quit existing Claude
 instances first. Desktop profile directories and logins are reused. Each
 profile's Code configuration starts fresh; existing shared `~/.claude`
 settings and history stay on disk and are not copied automatically.
+
+The rename from claude-many keeps `~/Library/Application Support/Claude-Many`
+in place. If you installed the old `claude-many.app`, quit it and remove that
+app copy after installing `Claude Replicant.app`; keep the profile data.
 
 Other controls: the **⋯** menu renames or deletes a profile. Deleting only
 removes it from the list — the data directory stays on disk so nothing is
@@ -91,7 +105,7 @@ xcodebuild -project claude-many.xcodeproj -scheme claude-many \
 
 For account-level verification, sign into two scratch profiles one at a time,
 then run a Code session in each. Check each account in Desktop, confirm that
-settings/history remain separate, restart claude-many while both are open,
+settings/history remain separate, restart Claude Replicant while both are open,
 and verify that Start does not duplicate them and Stop affects only its
 profile. Repeat after a Claude update. This check requires real accounts and
 is not run by CI.
@@ -128,14 +142,14 @@ a draft GitHub release. The gated live smoke test is described under
   instances before updating and reopen them through claude-many afterwards.
 - **Managed local storage is per profile**, under
   `~/Library/Application Support/Claude-Many/Profiles/<slug>/`, with Code
-  configuration in `.claude/`. claude-many does not copy or modify your
+  configuration in `.claude/`. Claude Replicant does not copy or modify your
   default Desktop or Code profile. Claude's cloud data remains account-bound.
   Removing a profile directory manually also removes its Code configuration.
 - **Local device pairing is disabled for relocated Desktop data directories**
   in Claude Desktop 2.31226.1. Other shared app services, such as Dock
   identity, sign-in callbacks, and logs, are not isolated by this launcher.
 - **No fixed limit** on the number of profiles beyond disk space and memory.
-- **Restarting the app adopts matching live profiles.** If claude-many is
+- **Restarting the app adopts matching live profiles.** If Claude Replicant is
   quit while instances are still running, the next launch detects each
   profile's live instance (by its data directory), shows it as running, and
   refuses to start a second one into that data directory until the first has
