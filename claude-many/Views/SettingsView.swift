@@ -36,7 +36,7 @@ struct SettingsView: View {
             }
 
             Section {
-                Text("Every profile keeps all of its account data in its own private directory under ~/Library/Application Support/Claude-Many/Profiles. Nothing is ever written to the shared ~/Library/Application Support/Claude folder, and no data ever leaves this machine.")
+                Text("\(AppBranding.name) keeps local profile configuration under ~/Library/Application Support/Claude-Many/Profiles so existing profiles continue to work. Claude manages cloud data through its own services.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

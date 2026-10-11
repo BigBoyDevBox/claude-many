@@ -27,7 +27,8 @@ struct ContentView: View {
                     }
                 }
             }
-            .navigationTitle("Claude Many")
+            .navigationTitle(AppBranding.name)
+            .navigationSubtitle(AppBranding.subtitle)
             .toolbar {
                 ToolbarItem {
                     Button {

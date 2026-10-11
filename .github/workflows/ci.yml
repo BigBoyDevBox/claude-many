@@ -25,9 +25,16 @@ jobs:
       # Runs the unit tests, builds the universal Release app and verifies its
       # signature. The gated live smoke test stays off: no real Claude Desktop.
       - run: scripts/build.sh --clean
-      - run: test -x build/claude-many.app/Contents/MacOS/claude-many
-      - run: codesign --verify --strict build/claude-many.app
+      - run: test -x "build/Claude Replicant.app/Contents/MacOS/claude-replicant"
+      - run: codesign --verify --strict "build/Claude Replicant.app"
+      - name: Check app identity
+        run: |
+          plist="build/Claude Replicant.app/Contents/Info.plist"
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$plist")" = 'Claude Replicant' ]
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$plist")" = 'claude-replicant' ]
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" = 'com.swissgrammie.claude-many' ]
+          test -s "build/Claude Replicant.app/Contents/Resources/AppIcon.icns"
       - name: Check universal binary
         run: |
-          lipo -archs build/claude-many.app/Contents/MacOS/claude-many | grep -q arm64
-          lipo -archs build/claude-many.app/Contents/MacOS/claude-many | grep -q x86_64
+          lipo -archs "build/Claude Replicant.app/Contents/MacOS/claude-replicant" | grep -q arm64
+          lipo -archs "build/Claude Replicant.app/Contents/MacOS/claude-replicant" | grep -q x86_64

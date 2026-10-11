@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Verify claude-many and assemble the native app.
+# Verify Claude Replicant and assemble the native app.
 # Usage: scripts/build.sh [--clean] [--run] [--install]
 set -euo pipefail
 
@@ -7,7 +7,8 @@ readonly SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 readonly REPOSITORY_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 readonly PROJECT="$REPOSITORY_ROOT/claude-many.xcodeproj"
 readonly SCHEME="claude-many"
-readonly APP_NAME="claude-many.app"
+readonly APP_NAME="Claude Replicant.app"
+readonly APP_EXECUTABLE="claude-replicant"
 readonly BUILD_DIR="$REPOSITORY_ROOT/build"
 readonly APP_PATH="$BUILD_DIR/$APP_NAME"
 readonly INSTALL_PATH="/Applications/$APP_NAME"
@@ -27,7 +28,7 @@ for argument in "$@"; do
 done
 
 if [[ "$(uname -s)" != Darwin ]]; then
-  echo "claude-many builds and tests on macOS only." >&2
+  echo "Claude Replicant builds and tests on macOS only." >&2
   exit 1
 fi
 
@@ -55,7 +56,7 @@ ditto "$BUILD_DIR/DerivedData/Build/Products/Release/$APP_NAME" "$APP_PATH"
 # The project signs ad hoc at build time; re-sign and verify to be certain.
 codesign --force --deep --sign - --timestamp=none "$APP_PATH"
 codesign --verify --strict "$APP_PATH"
-lipo -archs "$APP_PATH/Contents/MacOS/claude-many"
+lipo -archs "$APP_PATH/Contents/MacOS/$APP_EXECUTABLE"
 echo "$APP_PATH"
 
 if ((install_requested)); then

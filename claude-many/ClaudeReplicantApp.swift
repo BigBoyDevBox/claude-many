@@ -1,11 +1,11 @@
 import SwiftUI
 
 @main
-struct ClaudeManyApp: App {
+struct ClaudeReplicantApp: App {
     @State private var manager = ProfileManager()
 
     var body: some Scene {
-        WindowGroup("Claude Many") {
+        WindowGroup(AppBranding.name) {
             ContentView(manager: manager)
                 .onAppear { manager.load() }
         }

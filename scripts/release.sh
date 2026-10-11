@@ -77,9 +77,9 @@ sed -E -i '' \
 "$SCRIPT_DIR/build.sh" --clean
 
 git add "$PBXPROJ"
-git commit -s -m "Release claude-many $version" \
+git commit -s -m "Release Claude Replicant $version" \
   -m "Prepare the native macOS release metadata."
-git tag -a "$tag" -m "claude-many $version"
+git tag -a "$tag" -m "Claude Replicant $version"
 
 if [[ "$push_option" == "--push" ]]; then
   git push origin main "$tag"
