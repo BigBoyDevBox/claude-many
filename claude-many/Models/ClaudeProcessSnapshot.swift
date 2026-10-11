@@ -4,6 +4,9 @@ import Foundation
 struct ClaudeProcessSnapshot {
     let executablePath: String
     let arguments: [String]
+    let hasLegacyDataDirectoryOverride: Bool
+
+    private static let legacyOverridePrefix = Array("CLAUDE_USER_DATA_DIR=".utf8)
 
     init?(buffer: [UInt8]) {
         let headerSize = MemoryLayout<Int32>.size
@@ -34,5 +37,10 @@ struct ClaudeProcessSnapshot {
 
         self.executablePath = executablePath
         self.arguments = arguments
+        // A legacy environment hint may belong to an older app that relocates storage.
+        // It cannot identify a safe default instance, even when no directory switch exists.
+        hasLegacyDataDirectoryOverride = buffer[index...].split(separator: 0).contains {
+            $0.starts(with: Self.legacyOverridePrefix) && $0.count > Self.legacyOverridePrefix.count
+        }
     }
 }

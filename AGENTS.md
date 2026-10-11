@@ -30,6 +30,9 @@ pins it). Deployment target is macOS 14+. The project is a plain
   `--user-data-dir=<profile>`. Packaged Claude ignores `CLAUDE_USER_DATA_DIR`.
   `CLAUDE_CONFIG_DIR` and `CLAUDE_SECURESTORAGE_CONFIG_DIR` point to the
   profile's `.claude/`; discovery matches argv, never the legacy environment.
+  Default Claude launches without directory/config overrides and is a built-in,
+  non-persisted entry. Discovery rejects legacy environment hints and processes
+  owned by other users; standard and isolated instances are tracked separately.
   Evidence, callback/pairing limits, and upgrade behavior are in README.md
   ("How it works"). Keep them accurate when the mechanism changes.
 - `claude-many/Models/` owns the testable core: `ProfileStore`
@@ -37,8 +40,9 @@ pins it). Deployment target is macOS 14+. The project is a plain
   `ClaudeProcess`, `ClaudeProfile`. `claude-many/Views/` is SwiftUI only.
 - The profile list lives in `~/Library/Application
   Support/Claude-Many/profiles.json`, per-profile data dirs under
-  `.../Profiles/<slug>/`. Never touch the shared `~/Library/Application
-  Support/Claude` folder.
+  `.../Profiles/<slug>/`. Never create, copy, or delete normal Claude data in
+  the shared `~/Library/Application Support/Claude` folder. Only Claude itself
+  manages that folder when the user launches the Default Claude entry.
 
 ## Releases
 

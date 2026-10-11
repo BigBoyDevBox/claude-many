@@ -1,11 +1,12 @@
 import Foundation
+import Darwin
 
 /// Handle to a running Claude instance, abstracted behind a protocol so unit
 /// tests can verify state transitions without launching the real app.
 protocol ClaudeProcessHandle: AnyObject, Sendable {
     var processIdentifier: Int32 { get }
     var isRunning: Bool { get }
-    /// The data directory selected by --user-data-dir, when known.
+    /// The argv-selected isolated directory, or nil for a known standard instance.
     var dataDirectory: URL? { get }
     /// Called (on an arbitrary queue) when the process exits on its own.
     var terminationHandler: (@Sendable () -> Void)? { get set }
@@ -15,22 +16,28 @@ protocol ClaudeProcessHandle: AnyObject, Sendable {
     func terminateForcefully()
 }
 
+extension ClaudeProcessHandle {
+    var location: ClaudeInstanceLocation {
+        guard let dataDirectory else { return .standard }
+        return .isolated(dataDirectory: dataDirectory)
+    }
+}
+
 /// Spawns `Process` instances. Injected into `ProfileManager`; tests replace
 /// this with a fake that records launches.
 protocol ClaudeLauncher: Sendable {
-    func launch(executable: URL, dataDirectory: URL) throws -> ClaudeProcessHandle
-    /// Live handles for processes running `executable` with --user-data-dir set.
+    func launch(executable: URL, location: ClaudeInstanceLocation) throws -> ClaudeProcessHandle
+    /// Current-user standard and argv-selected isolated instances of `executable`.
     func runningHandles(executable: URL) -> [ClaudeProcessHandle]
 }
 
 /// Real launcher backed by Foundation's `Process`.
 struct RealClaudeLauncher: ClaudeLauncher {
-    func launch(executable: URL, dataDirectory: URL) throws -> ClaudeProcessHandle {
-        let configuration = ClaudeLaunchConfiguration(dataDirectory: dataDirectory)
-        try FileManager.default.createDirectory(
-            at: configuration.codeConfigurationDirectory,
-            withIntermediateDirectories: true
-        )
+    func launch(executable: URL, location: ClaudeInstanceLocation) throws -> ClaudeProcessHandle {
+        let configuration = ClaudeLaunchConfiguration(location: location)
+        if let directory = configuration.codeConfigurationDirectory {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
 
         let process = Process()
         process.executableURL = executable
@@ -44,25 +51,29 @@ struct RealClaudeLauncher: ClaudeLauncher {
         try process.run()
         return RealClaudeProcess(
             process: process,
-            dataDirectory: dataDirectory
+            dataDirectory: location.dataDirectory
         )
     }
 
-    /// Adopt only argv-selected profiles. Signed Claude builds discard the old
-    /// environment override, so an env-only process may actually use the default profile.
+    /// Never derive a location from legacy environment hints; ambiguous launches are excluded.
     func runningHandles(executable: URL) -> [ClaudeProcessHandle] {
         let target = executable.resolvingSymlinksInPath().path
         var result: [ClaudeProcessHandle] = []
         for (pid, startTime) in Self.allProcesses() {
+            // Read argv/environment only for candidate executables during periodic discovery.
+            if let path = Self.executablePath(for: pid), !Self.executableMatches(path, target: target) {
+                continue
+            }
             guard let info = Self.processInfo(for: pid),
-                  Self.executableMatches(info.executablePath, target: target),
-                  let dataDirectory = ClaudeLaunchConfiguration.dataDirectory(in: info.arguments) else {
+                   Self.executableMatches(info.executablePath, target: target),
+                  !info.hasLegacyDataDirectoryOverride,
+                  let location = ClaudeLaunchConfiguration.location(in: info.arguments) else {
                 continue
             }
             result.append(AttachedClaudeProcess(
                 pid: pid,
                 startTime: startTime,
-                dataDirectory: dataDirectory
+                dataDirectory: location.dataDirectory
             ))
         }
         return result
@@ -71,6 +82,14 @@ struct RealClaudeLauncher: ClaudeLauncher {
     // MARK: Process introspection
 
     private static let processTableReadAttempts = 3
+
+    private static func executablePath(for pid: Int32) -> String? {
+        let capacity = UInt32(PROC_PIDPATHINFO_MAXSIZE)
+        var buffer = [CChar](repeating: 0, count: Int(capacity))
+        let length = proc_pidpath(pid, &buffer, capacity)
+        guard length > 0 else { return nil }
+        return String(cString: buffer)
+    }
 
     private static func allProcesses() -> [(pid: Int32, startTime: timeval)] {
         // The process table can grow between sizing and reading. Retry that race.
@@ -86,7 +105,9 @@ struct RealClaudeLauncher: ClaudeLauncher {
             }
 
             let populatedCount = size / MemoryLayout<kinfo_proc>.size
-            return procs.prefix(populatedCount).map { ($0.kp_proc.p_pid, $0.kp_proc.p_un.__p_starttime) }
+            return procs.prefix(populatedCount)
+                .filter { $0.kp_eproc.e_ucred.cr_uid == geteuid() }
+                .map { ($0.kp_proc.p_pid, $0.kp_proc.p_un.__p_starttime) }
         }
         return []
     }

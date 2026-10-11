@@ -7,22 +7,20 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
+            List {
+                ForEach(manager.listedProfiles) { profile in
+                    ProfileRowView(manager: manager, profile: profile)
+                }
+
                 if manager.profiles.isEmpty {
                     ContentUnavailableView {
-                        Label("No Profiles", systemImage: "person.2")
+                        Label("No Isolated Profiles", systemImage: "person.2")
                     } description: {
-                        Text("Add one profile per Claude account.\nEach profile runs its own Claude Desktop instance with its own login.")
+                        Text("Default Claude uses your normal login.\nAdd isolated profiles to use other accounts alongside it.")
                     } actions: {
                         Button("Add Profile") {
                             newProfileName = ""
                             showingAddAlert = true
-                        }
-                    }
-                } else {
-                    List {
-                        ForEach(manager.profiles) { profile in
-                            ProfileRowView(manager: manager, profile: profile)
                         }
                     }
                 }
@@ -48,6 +46,7 @@ struct ContentView: View {
                 Text("Each profile gets its own private data directory.")
             }
         }
+        .task { await manager.monitorRunningProcesses() }
         .alert(
             "Something went wrong",
             isPresented: errorBinding

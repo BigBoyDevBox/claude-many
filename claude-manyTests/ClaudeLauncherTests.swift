@@ -8,27 +8,7 @@ final class ClaudeLauncherTests: XCTestCase {
             .appendingPathComponent("claude-many-launch-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let bundle = root.appendingPathComponent("Claude.app", isDirectory: true)
-        let executable = bundle.appendingPathComponent("Contents/MacOS/Claude")
-        try FileManager.default.createDirectory(
-            at: executable.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-
-        // A recording executable checks the real subprocess boundary without opening Claude.
-        let script = """
-        #!/bin/sh
-        printf '%s\\n' "$@" > "$0.arguments"
-        printf '%s' "${CLAUDE_CONFIG_DIR-}" > "$0.code-config"
-        printf '%s' "${CLAUDE_SECURESTORAGE_CONFIG_DIR-}" > "$0.secure-storage"
-        printf '%s' "${CLAUDE_USER_DATA_DIR-}" > "$0.legacy-data"
-        : > "$0.ready"
-        """
-        try Data(script.utf8).write(to: executable)
-        try FileManager.default.setAttributes(
-            [.posixPermissions: 0o755],
-            ofItemAtPath: executable.path
-        )
+        let (bundle, executable) = try makeRecordingExecutable(root: root)
 
         let manager = ProfileManager(
             store: ProfileStore(fileURL: root.appendingPathComponent("profiles.json")),
@@ -41,12 +21,7 @@ final class ClaudeLauncherTests: XCTestCase {
         let profile = try manager.addProfile(named: "Work")
         try manager.start(id: profile.id)
 
-        let ready = URL(fileURLWithPath: executable.path + ".ready")
-        let deadline = Date().addingTimeInterval(5)
-        while !FileManager.default.fileExists(atPath: ready.path), Date() < deadline {
-            try await Task.sleep(for: .milliseconds(25))
-        }
-        XCTAssertTrue(FileManager.default.fileExists(atPath: ready.path))
+        try await waitForRecording(executable: executable)
 
         let codeDirectory = profile.dataDirectory.appendingPathComponent(".claude", isDirectory: true)
         XCTAssertEqual(try output("arguments", executable: executable),
@@ -55,6 +30,29 @@ final class ClaudeLauncherTests: XCTestCase {
         XCTAssertEqual(try output("secure-storage", executable: executable), codeDirectory.path)
         XCTAssertEqual(try output("legacy-data", executable: executable), "")
         XCTAssertTrue(FileManager.default.fileExists(atPath: codeDirectory.path))
+    }
+
+    func testStandardStartUsesNoDirectoryOverridesOrPrivateFolders() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("claude-replicant-normal-launch-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let (bundle, executable) = try makeRecordingExecutable(root: root)
+        let manager = ProfileManager(
+            store: ProfileStore(fileURL: root.appendingPathComponent("profiles.json")),
+            launcher: RealClaudeLauncher(),
+            claudeBundleURL: bundle,
+            dataRootDirectory: root.appendingPathComponent("Profiles")
+        )
+        defer { manager.stopAll() }
+
+        try manager.start(id: ClaudeProfile.standard.id)
+        try await waitForRecording(executable: executable)
+        XCTAssertEqual(try output("arguments", executable: executable), "\n")
+        XCTAssertEqual(try output("code-config", executable: executable), "")
+        XCTAssertEqual(try output("secure-storage", executable: executable), "")
+        XCTAssertEqual(try output("legacy-data", executable: executable), "")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: manager.dataRootDirectory.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: manager.store.fileURL.path))
     }
 
     func testDiscoveryAndStopIgnoreLegacyEnvironmentOnlyProcesses() throws {
@@ -115,6 +113,41 @@ final class ClaudeLauncherTests: XCTestCase {
         XCTAssertTrue(other.isRunning, "stopping an adopted profile must leave other profiles alive")
         XCTAssertTrue(legacy.isRunning, "legacy env-only instances must not be adopted or stopped")
         XCTAssertTrue(standard.isRunning, "stopping an isolated profile must leave the default instance alive")
+
+        let defaultHandle = try XCTUnwrap(standardHandle)
+        defaultHandle.terminate()
+        standard.waitUntilExit()
+        XCTAssertFalse(defaultHandle.isRunning)
+        XCTAssertTrue(other.isRunning, "stopping default Claude must not stop an isolated instance")
+        XCTAssertTrue(legacy.isRunning, "stopping default Claude must not signal ambiguous legacy instances")
+    }
+
+    private func makeRecordingExecutable(root: URL) throws -> (URL, URL) {
+        let bundle = root.appendingPathComponent("Claude.app", isDirectory: true)
+        let executable = bundle.appendingPathComponent("Contents/MacOS/Claude")
+        try FileManager.default.createDirectory(at: executable.deletingLastPathComponent(), withIntermediateDirectories: true)
+
+        // Record the real subprocess boundary without opening Claude or writing its normal data.
+        let script = """
+        #!/bin/sh
+        printf '%s\\n' "$@" > "$0.arguments"
+        printf '%s' "${CLAUDE_CONFIG_DIR-}" > "$0.code-config"
+        printf '%s' "${CLAUDE_SECURESTORAGE_CONFIG_DIR-}" > "$0.secure-storage"
+        printf '%s' "${CLAUDE_USER_DATA_DIR-}" > "$0.legacy-data"
+        : > "$0.ready"
+        """
+        try Data(script.utf8).write(to: executable)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+        return (bundle, executable)
+    }
+
+    private func waitForRecording(executable: URL) async throws {
+        let ready = URL(fileURLWithPath: executable.path + ".ready")
+        let deadline = Date().addingTimeInterval(5)
+        while !FileManager.default.fileExists(atPath: ready.path), Date() < deadline {
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: ready.path))
     }
 
     private func output(_ name: String, executable: URL) throws -> String {

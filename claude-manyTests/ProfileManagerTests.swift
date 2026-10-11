@@ -8,7 +8,8 @@ import XCTest
 final class FakeClaudeLauncher: ClaudeLauncher, @unchecked Sendable {
     struct LaunchRecord: Equatable {
         let executable: URL
-        let dataDirectory: URL
+        let location: ClaudeInstanceLocation
+        var dataDirectory: URL? { location.dataDirectory }
     }
 
     private(set) var launches: [LaunchRecord] = []
@@ -20,11 +21,12 @@ final class FakeClaudeLauncher: ClaudeLauncher, @unchecked Sendable {
     /// When true, a launched process is already dead by the time launch()
     /// returns (it exited before the manager could attach its handler).
     var launchReturnsDeadHandle = false
+    private(set) var discoveryCalls = 0
 
-    func launch(executable: URL, dataDirectory: URL) throws -> ClaudeProcessHandle {
+    func launch(executable: URL, location: ClaudeInstanceLocation) throws -> ClaudeProcessHandle {
         if let shouldThrow { throw shouldThrow }
-        launches.append(LaunchRecord(executable: executable, dataDirectory: dataDirectory))
-        let handle = FakeClaudeProcess(dataDirectory: dataDirectory)
+        launches.append(LaunchRecord(executable: executable, location: location))
+        let handle = FakeClaudeProcess(dataDirectory: location.dataDirectory)
         launchedHandles.append(handle)
         if launchReturnsDeadHandle {
             handle.simulateExit()
@@ -33,7 +35,8 @@ final class FakeClaudeLauncher: ClaudeLauncher, @unchecked Sendable {
     }
 
     func runningHandles(executable: URL) -> [ClaudeProcessHandle] {
-        runningHandlesToReturn
+        discoveryCalls += 1
+        return runningHandlesToReturn
     }
 }
 

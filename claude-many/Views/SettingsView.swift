@@ -36,7 +36,7 @@ struct SettingsView: View {
             }
 
             Section {
-                Text("\(AppBranding.name) keeps local profile configuration under ~/Library/Application Support/Claude-Many/Profiles so existing profiles continue to work. Claude manages cloud data through its own services.")
+                Text("Isolated profiles keep local configuration under ~/Library/Application Support/Claude-Many/Profiles. Default Claude uses its normal data and settings. Claude manages cloud data through its own services.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
