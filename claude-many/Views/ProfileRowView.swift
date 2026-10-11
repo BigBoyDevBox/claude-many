@@ -20,7 +20,7 @@ struct ProfileRowView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(profile.label)
                     .font(.headline)
-                Text(profile.dataDirectory.path)
+                Text(profile.isDefault ? "Uses normal Claude data and settings" : profile.dataDirectory.path)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -50,25 +50,27 @@ struct ProfileRowView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!manager.bundleExists)
-                .help("Launch Claude Desktop with this profile's data directory")
+                .help(profile.isDefault ? "Launch the normal Claude Desktop instance" : "Launch Claude Desktop with this profile's data directory")
             }
 
-            Menu {
-                Button("Rename…") {
-                    renameText = profile.label
-                    showingRenameAlert = true
+            if !profile.isDefault {
+                Menu {
+                    Button("Rename…") {
+                        renameText = profile.label
+                        showingRenameAlert = true
+                    }
+                    Divider()
+                    Button("Delete", role: .destructive) {
+                        showingDeleteConfirm = true
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .frame(width: 16)
                 }
-                Divider()
-                Button("Delete", role: .destructive) {
-                    showingDeleteConfirm = true
-                }
-            } label: {
-                Image(systemName: "ellipsis.circle")
-                    .frame(width: 16)
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help("More actions")
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .help("More actions")
         }
         .confirmationDialog(
             "Delete “\(profile.label)”?",

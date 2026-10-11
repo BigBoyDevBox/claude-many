@@ -13,6 +13,10 @@ directory per profile and launches Claude Desktop pointed at it.
 
 ## What it is
 
+- **Default Claude** is always first in the list. It uses your existing
+  normal Desktop login and Code settings, without directory overrides.
+  Start/Stop and live status work for it too, including when you open Claude
+  from the Dock. This built-in entry cannot be renamed or deleted.
 - **Profile manager** — add, rename, remove, start, and stop profiles. Each
   profile has a label, a Start/Stop control, and a running indicator.
 - **Unlimited profiles** — as many as you have accounts. Profiles and their
@@ -28,13 +32,25 @@ directory per profile and launches Claude Desktop pointed at it.
 
 ## How it works
 
-Claude Desktop (`/Applications/Claude.app`) is an Electron app. Claude Replicant
-spawns `/Applications/Claude.app/Contents/MacOS/Claude` directly with
+Claude Desktop (`/Applications/Claude.app`) is an Electron app. For isolated
+profiles, Claude Replicant spawns `/Applications/Claude.app/Contents/MacOS/Claude` directly with
 `--user-data-dir=<profile directory>` to select independent Desktop storage.
 It also sets `CLAUDE_CONFIG_DIR` and `CLAUDE_SECURESTORAGE_CONFIG_DIR` to
 `<profile directory>/.claude`, keeping Code configuration and its credential
 namespace separate. Process discovery reads the directory from argv, so
 restarting Claude Replicant can adopt instances it previously launched.
+
+**Default Claude** runs the same executable with no `--user-data-dir`
+argument. Inherited `CLAUDE_USER_DATA_DIR`, `CLAUDE_CONFIG_DIR`, and
+`CLAUDE_SECURESTORAGE_CONFIG_DIR` overrides are removed for this launch.
+Claude chooses its normal locations, just as when opened normally. The
+manager does not create, copy, or delete files in the normal Claude data
+directory, and the built-in entry is not saved in `profiles.json`.
+
+While the list is open, running status is refreshed every two seconds.
+Starting an entry checks again for an existing process before launching.
+Process discovery is limited to your user account. Ambiguous legacy
+environment-override launches are excluded rather than treated as default.
 
 Current packaged Claude builds discard `CLAUDE_USER_DATA_DIR`; the launcher
 removes that legacy variable even when inherited. This startup policy was
@@ -76,6 +92,9 @@ sizes, run `python3 scripts/generate-icons.py` with Pillow installed.
    up another profile. Check which account your browser is signed into.
 4. Once each profile is signed in, start them together to work side by side.
    **Stop** quits that instance and preserves its login for next time.
+
+Use **Default Claude** for the account already signed in through the normal
+app. Its controls operate on that normal instance, not on an isolated profile.
 
 When upgrading from the environment-variable launcher, quit existing Claude
 instances first. Desktop profile directories and logins are reused. Each
@@ -145,6 +164,9 @@ a draft GitHub release. The gated live smoke test is described under
   configuration in `.claude/`. Claude Replicant does not copy or modify your
   default Desktop or Code profile. Claude's cloud data remains account-bound.
   Removing a profile directory manually also removes its Code configuration.
+- **Default Claude keeps its existing normal storage.** Claude itself may
+  write there as usual when launched from the built-in entry. The manager
+  does not migrate or edit that data and does not offer Delete for this entry.
 - **Local device pairing is disabled for relocated Desktop data directories**
   in Claude Desktop 2.31226.1. Other shared app services, such as Dock
   identity, sign-in callbacks, and logs, are not isolated by this launcher.

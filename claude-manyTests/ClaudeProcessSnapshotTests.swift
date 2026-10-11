@@ -2,6 +2,17 @@ import XCTest
 @testable import claude_many
 
 final class ClaudeProcessSnapshotTests: XCTestCase {
+    func testLegacyOverrideIsOnlyAReasonToExcludeAmbiguousProcesses() throws {
+        let prefix = header(argumentCount: 1) + Array("/Claude\0\0/Claude\0".utf8)
+        let legacy = try XCTUnwrap(ClaudeProcessSnapshot(buffer: prefix + Array("CLAUDE_USER_DATA_DIR=/old\0".utf8)))
+        let empty = try XCTUnwrap(ClaudeProcessSnapshot(buffer: prefix + Array("CLAUDE_USER_DATA_DIR=\0".utf8)))
+        let unrelated = try XCTUnwrap(ClaudeProcessSnapshot(buffer: prefix + Array("OTHER=CLAUDE_USER_DATA_DIR=/old\0".utf8)))
+        XCTAssertTrue(legacy.hasLegacyDataDirectoryOverride)
+        XCTAssertFalse(empty.hasLegacyDataDirectoryOverride)
+        XCTAssertFalse(unrelated.hasLegacyDataDirectoryOverride)
+        XCTAssertEqual(legacy.arguments, ["/Claude"])
+    }
+
     func testKernelPaddingSpacesAndEmptyArgumentsArePreserved() throws {
         let executable = "/Applications/Claude.app/Contents/MacOS/Claude"
         let arguments = [executable, "", "--user-data-dir=/Profiles/Work Account/Ötzi"]

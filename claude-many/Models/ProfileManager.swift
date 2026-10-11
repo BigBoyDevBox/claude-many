@@ -10,6 +10,7 @@ final class ProfileManager {
     // MARK: Published state
 
     private(set) var profiles: [ClaudeProfile] = []
+    var listedProfiles: [ClaudeProfile] { [.standard] + profiles }
     private(set) var runningProfileIDs: Set<UUID> = []
     var claudeBundleURL: URL
     private(set) var lastError: String?
@@ -25,6 +26,8 @@ final class ProfileManager {
     private var handles: [UUID: ClaudeProcessHandle] = [:]
     /// Pending force-kill timers, one per stopped profile.
     private var forceKillTasks: [UUID: Task<Void, Never>] = [:]
+    private static let reconciliationInterval: Duration = .seconds(2)
+    private var monitorOwner: UUID?
 
     // MARK: Well-known paths
 
@@ -71,23 +74,51 @@ final class ProfileManager {
             lastError = "Could not load profiles: \(error.localizedDescription)"
             return
         }
-        reconcileRunningProcesses()
+        refreshRunningProcesses()
     }
 
-    /// Adopts Claude instances left over from a previous app run: any live
-    /// process whose --user-data-dir matches a profile's data directory
-    /// is tracked as that profile's running instance, so Start cannot spawn a
-    /// duplicate into a data directory that is still in use.
-    private func reconcileRunningProcesses() {
+    /// Reconcile external starts as well as instances left over from an app relaunch.
+    func refreshRunningProcesses() {
+        for (id, handle) in handles where !handle.isRunning {
+            handleTermination(of: id, handle: handle)
+        }
+
         let executable = claudeBundleURL.appendingPathComponent("Contents/MacOS/Claude")
         for handle in launcher.runningHandles(executable: executable) {
-            guard let dataDirectory = handle.dataDirectory else { continue }
-            let directory = dataDirectory.standardizedFileURL.resolvingSymlinksInPath().path
-            guard let profile = profiles.first(where: {
-                $0.dataDirectory.standardizedFileURL.resolvingSymlinksInPath().path == directory
-            }) else { continue }
-            guard handles[profile.id] == nil else { continue }
-            attach(handle: handle, to: profile.id)
+            guard handle.isRunning else { continue }
+            let id: UUID
+            switch handle.location {
+            case .standard:
+                id = ClaudeProfile.standard.id
+            case .isolated(let dataDirectory):
+                let directory = dataDirectory.standardizedFileURL.resolvingSymlinksInPath().path
+                guard let profile = profiles.first(where: {
+                    $0.dataDirectory.standardizedFileURL.resolvingSymlinksInPath().path == directory
+                }) else { continue }
+                id = profile.id
+            }
+            guard handles[id] == nil else { continue }
+            attach(handle: handle, to: id)
+        }
+    }
+
+    /// Views own their task lifetimes; only one scans, and another takes over after cancellation.
+    func monitorRunningProcesses() async {
+        let owner = UUID()
+        defer {
+            if monitorOwner == owner { monitorOwner = nil }
+        }
+
+        while !Task.isCancelled {
+            if monitorOwner == nil || monitorOwner == owner {
+                monitorOwner = owner
+                refreshRunningProcesses()
+            }
+            do {
+                try await Task.sleep(for: Self.reconciliationInterval)
+            } catch {
+                return
+            }
         }
     }
 
@@ -110,6 +141,7 @@ final class ProfileManager {
     }
 
     func renameProfile(id: UUID, to newLabel: String) throws {
+        guard id != ClaudeProfile.standard.id else { throw ProfileManagerError.builtInProfile }
         guard let index = profiles.firstIndex(where: { $0.id == id }) else {
             throw ProfileManagerError.profileNotFound
         }
@@ -123,6 +155,7 @@ final class ProfileManager {
     /// Its data directory is deliberately left on disk: it holds the account's
     /// login and conversations, and deletion is destructive.
     func removeProfile(id: UUID) throws {
+        guard id != ClaudeProfile.standard.id else { throw ProfileManagerError.builtInProfile }
         stop(id: id)
         profiles.removeAll { $0.id == id }
         try persist()
@@ -134,11 +167,12 @@ final class ProfileManager {
         runningProfileIDs.contains(id)
     }
 
-    /// Launches Claude with private Desktop storage and Claude Code configuration.
+    /// Launch only after a fresh scan, so an externally opened default instance is not duplicated.
     func start(id: UUID) throws {
-        guard let profile = profiles.first(where: { $0.id == id }) else {
+        guard let profile = listedProfiles.first(where: { $0.id == id }) else {
             throw ProfileManagerError.profileNotFound
         }
+        refreshRunningProcesses()
         guard !isRunning(id: id) else { return }
 
         // stop() reports the profile as stopped immediately, but the previous
@@ -155,16 +189,15 @@ final class ProfileManager {
 
         // Create the profile's data directory lazily; Claude builds its own
         // layout (Local Storage, cookies, config, sessions) on first run.
-        try FileManager.default.createDirectory(
-            at: profile.dataDirectory,
-            withIntermediateDirectories: true
-        )
+        if let directory = profile.location.dataDirectory {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
 
         let executable = claudeBundleURL
             .appendingPathComponent("Contents/MacOS/Claude")
         let handle = try launcher.launch(
             executable: executable,
-            dataDirectory: profile.dataDirectory
+            location: profile.location
         )
         attach(handle: handle, to: id)
         lastError = nil
@@ -291,6 +324,7 @@ enum ProfileManagerError: LocalizedError, Equatable {
     case profileNotFound
     case bundleMissing(path: String)
     case stopInProgress
+    case builtInProfile
 
     var errorDescription: String? {
         switch self {
@@ -302,6 +336,8 @@ enum ProfileManagerError: LocalizedError, Equatable {
             return "Claude.app was not found at \(path). Install Claude Desktop or fix the path in Settings."
         case .stopInProgress:
             return "This profile's previous instance is still shutting down; try again in a moment."
+        case .builtInProfile:
+            return "Default Claude is built in and cannot be renamed or removed."
         }
     }
 }

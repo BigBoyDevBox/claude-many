@@ -2,6 +2,34 @@ import XCTest
 @testable import claude_many
 
 final class ClaudeLaunchConfigurationTests: XCTestCase {
+    func testStandardLaunchHasNoDirectoryOverrides() {
+        let configuration = ClaudeLaunchConfiguration(location: .standard)
+        let inherited = [
+            "PATH": "/usr/bin:/bin", "HOME": "/Users/example",
+            "CLAUDE_USER_DATA_DIR": "/legacy", "CLAUDE_CONFIG_DIR": "/private-code",
+            "CLAUDE_SECURESTORAGE_CONFIG_DIR": "/private-keychain"
+        ]
+        let environment = configuration.environment(inheriting: inherited)
+
+        XCTAssertEqual(configuration.arguments, [])
+        XCTAssertNil(configuration.codeConfigurationDirectory)
+        XCTAssertNil(environment["CLAUDE_USER_DATA_DIR"])
+        XCTAssertNil(environment["CLAUDE_CONFIG_DIR"])
+        XCTAssertNil(environment["CLAUDE_SECURESTORAGE_CONFIG_DIR"])
+        XCTAssertEqual(environment["HOME"], inherited["HOME"])
+        XCTAssertEqual(environment["PATH"], inherited["PATH"])
+    }
+
+    func testStandardAndAmbiguousDirectoryArgumentsAreDistinct() {
+        XCTAssertEqual(ClaudeLaunchConfiguration.location(in: ["/Applications/Claude", "--some-option"]), .standard)
+        XCTAssertEqual(ClaudeLaunchConfiguration.location(in: ["--", "--user-data-dir=/ignored"]), .standard)
+        for arguments in [["--user-data-dir"], ["--user-data-dir="], ["--user-data-dir=relative"]] {
+            XCTAssertNil(ClaudeLaunchConfiguration.location(in: arguments))
+        }
+        XCTAssertEqual(ClaudeLaunchConfiguration.location(in: ["-user-data-dir=/private"]),
+                       .isolated(dataDirectory: URL(fileURLWithPath: "/private", isDirectory: true)))
+    }
+
     func testProfilesKeepSeparateCodeStateAndReplaceInheritedPaths() {
         let work = ClaudeLaunchConfiguration(dataDirectory: URL(fileURLWithPath: "/Profiles/Work Account"))
         let personal = ClaudeLaunchConfiguration(dataDirectory: URL(fileURLWithPath: "/Profiles/Personal"))
