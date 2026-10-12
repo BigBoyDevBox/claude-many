@@ -46,19 +46,21 @@ extension FocusedValues {
 /// Single-window app, so the command context is effectively app-global:
 /// the view pushes the current selection state here and menu commands read
 /// it. `@FocusedValue` stays the primary lookup (correct if the app ever
-/// grows a second window); this is the deterministic fallback.
-@Observable
+/// grows a second window); this is the deterministic fallback — an
+/// ObservableObject because Commands rebuilds track DynamicProperty
+/// dependencies, not Observation-framework reads.
 @MainActor
-final class ProfileCommandCenter {
+final class ProfileCommandCenter: ObservableObject {
     static let shared = ProfileCommandCenter()
-    var context = ProfileCommandContext()
+    @Published var context = ProfileCommandContext()
 }
 
 struct ProfileCommands: Commands {
     @FocusedValue(\.profileCommands) private var focusedContext
+    @ObservedObject private var center = ProfileCommandCenter.shared
 
     private var context: ProfileCommandContext {
-        focusedContext ?? ProfileCommandCenter.shared.context
+        focusedContext ?? center.context
     }
 
     var body: some Commands {
