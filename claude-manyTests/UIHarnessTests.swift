@@ -1,5 +1,6 @@
 import XCTest
 import AppKit
+@testable import claude_many
 
 /// SCRATCH-BRANCH ONLY — visual/interaction harness, never merged.
 /// Runs inside the real app process (hosted test): dumps the menu bar with
@@ -60,6 +61,7 @@ final class UIHarnessTests: XCTestCase {
         try captureWindows(prefix: "03-after-rename")
 
         // Cmd-Return: open the selected profile (launches the fake Claude.app).
+        probeContext("before-open")
         popAndDumpMenu(titled: "Profiles", prefix: "profiles-selected")
         sendKey(keyCode: 36, chars: "\r", mods: .command)
         try await Task.sleep(for: .milliseconds(1500))
@@ -168,6 +170,13 @@ final class UIHarnessTests: XCTestCase {
         if mask.contains(.shift) { mods += "⇧" }
         if mask.contains(.command) { mods += "⌘" }
         return mods + key.uppercased()
+    }
+
+    /// Reads the command center directly: tells us whether the view pushed
+    /// context (flags live here) vs whether the menu rebuilt (flags there).
+    private func probeContext(_ label: String) {
+        let ctx = ProfileCommandCenter.shared.context
+        log("context[\(label)]: sel=\(ctx.selectionCount) canOpen=\(ctx.canOpen) canStartAll=\(ctx.canStartAll) canStopAll=\(ctx.canStopAll) openTitle=\(ctx.openTitle)")
     }
 
     /// Actually pops a submenu like a real user opening it, dumps the item
