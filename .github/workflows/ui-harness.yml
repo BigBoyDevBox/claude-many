@@ -39,6 +39,7 @@ jobs:
 
       - name: Run UI harness inside the real app
         run: |
+          set -o pipefail
           xcodebuild -project claude-many.xcodeproj -scheme claude-many \
             -destination 'platform=macOS' \
             -derivedDataPath build/DerivedData test \
