@@ -426,7 +426,7 @@ final class ProfileManagerTests: XCTestCase {
         let third = try manager.addUntitledProfile()
         let fourth = try manager.addUntitledProfile()
 
-        XCTAssertEqual(first.label, "Work")
+        XCTAssertEqual(manager.profiles.first { $0.id == first.id }?.label, "Work")
         XCTAssertEqual(second.label, "New Profile 2")
         XCTAssertEqual(third.label, "New Profile")
         XCTAssertEqual(fourth.label, "New Profile 3")
