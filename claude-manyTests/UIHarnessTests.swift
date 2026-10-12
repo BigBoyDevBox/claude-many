@@ -20,7 +20,10 @@ final class UIHarnessTests: XCTestCase {
     }
 
     func testHarness() async throws {
-        let app = NSApp
+        guard let app = NSApp else {
+            XCTFail("no running application")
+            return
+        }
         app.activate()
         try await waitForWindow(named: "Claude Replicant")
         try await Task.sleep(for: .milliseconds(800))
