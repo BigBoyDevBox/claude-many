@@ -45,6 +45,7 @@ final class UIHarnessTests: XCTestCase {
 
         dumpMenus(prefix: "a-idle")
         try captureWindows(prefix: "01-idle")
+        popAndDumpMenu(titled: "Profiles", prefix: "profiles-empty-selection")
 
         // Cmd-N: New Profile via its real key equivalent.
         sendKey(keyCode: 45, chars: "n", mods: .command)
@@ -59,6 +60,7 @@ final class UIHarnessTests: XCTestCase {
         try captureWindows(prefix: "03-after-rename")
 
         // Cmd-Return: open the selected profile (launches the fake Claude.app).
+        popAndDumpMenu(titled: "Profiles", prefix: "profiles-selected")
         sendKey(keyCode: 36, chars: "\r", mods: .command)
         try await Task.sleep(for: .milliseconds(1500))
         try captureWindows(prefix: "04-after-open")
@@ -168,6 +170,30 @@ final class UIHarnessTests: XCTestCase {
         return mods + key.uppercased()
     }
 
+    /// Actually pops a submenu like a real user opening it, dumps the item
+    /// states as rendered at open time (menuWillOpen forces revalidation),
+    /// then dismisses. This is the state a real user sees.
+    private func popAndDumpMenu(titled title: String, prefix: String) {
+        func search(_ menu: NSMenu) -> NSMenuItem? {
+            for item in menu.items {
+                if item.title == title && item.submenu != nil { return item }
+                if let found = item.submenu.flatMap(search) { return found }
+            }
+            return nil
+        }
+        guard let topItem = NSApp.mainMenu.flatMap(search),
+              let submenu = topItem.submenu else {
+            log("menu '\(title)' not found")
+            return
+        }
+        let prober = MenuProber(prefix: prefix, outDir: outDir, log: log)
+        submenu.delegate = prober
+        log("popping '\(title)'")
+        submenu.popUp(positioning: nil, at: .init(x: 20, y: 20), in: mainWindow()?.contentView)
+        prober.write()
+        submenu.delegate = nil
+    }
+
     /// Simulates choosing a menu item: the same dispatch a real click uses.
     private func invokeMenuItem(_ title: String, inMenuTitled menuTitle: String) {
         func search(_ menu: NSMenu) -> NSMenuItem? {
@@ -230,5 +256,35 @@ final class UIHarnessTests: XCTestCase {
         }
         try? report.joined(separator: "\n").write(
             to: outDir.appendingPathComponent("windows.txt"), atomically: true, encoding: .utf8)
+    }
+}
+
+/// Dumps menu item states while the menu is genuinely open (menuWillOpen),
+/// then cancels tracking so the synchronous popUp returns.
+@MainActor
+private final class MenuProber: NSObject, NSMenuDelegate {
+    let prefix: String
+    let outDir: URL
+    let log: (String) -> Void
+    var lines: [String] = []
+
+    init(prefix: String, outDir: URL, log: @escaping (String) -> Void) {
+        self.prefix = prefix
+        self.outDir = outDir
+        self.log = log
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        for item in menu.items {
+            lines.append("\(item.title.isEmpty ? "---" : item.title) enabled=\(item.isEnabled) action=\(item.action.map(NSStringFromSelector) ?? "-")")
+        }
+        log("opened menu items:\n" + lines.joined(separator: "\n"))
+        menu.cancelTracking()
+    }
+
+    func write() {
+        try? lines.joined(separator: "\n").write(
+            to: outDir.appendingPathComponent("menu-open-\(prefix).txt"),
+            atomically: true, encoding: .utf8)
     }
 }
