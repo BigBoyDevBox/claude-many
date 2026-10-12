@@ -29,11 +29,11 @@ final class UIHarnessTests: XCTestCase {
             XCTFail("no running application")
             return
         }
-        app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+        app.activate()
         try await waitForWindow(named: "Claude Replicant")
         try await Task.sleep(for: .milliseconds(800))
         mainWindow()?.makeKeyAndOrderFront(nil)
-        app.activate(options: [.activateIgnoringOtherApps])
+        app.activate()
         try await Task.sleep(for: .milliseconds(400))
         log("key window: \(NSApp.keyWindow?.title ?? "none")")
 
