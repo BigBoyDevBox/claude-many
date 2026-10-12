@@ -2,10 +2,10 @@ import XCTest
 import AppKit
 
 /// SCRATCH-BRANCH ONLY — visual/interaction harness, never merged.
-/// Runs inside the real app process (hosted test): dumps the menu bar,
-/// captures real windows to PNG (frame view, so titlebar + toolbar included),
-/// and drives the UI with synthesized NSEvents through NSApp.sendEvent —
-/// key equivalents, arrows and text all route like real input.
+/// Runs inside the real app process (hosted test): dumps the menu bar with
+/// live enablement, captures real windows to PNG (frame view, so titlebar +
+/// toolbar included), and drives the UI with synthesized NSEvents through
+/// NSApp.sendEvent plus performActionForItem for real menu dispatch.
 @MainActor
 final class UIHarnessTests: XCTestCase {
     private var outDir: URL {
@@ -29,13 +29,13 @@ final class UIHarnessTests: XCTestCase {
             XCTFail("no running application")
             return
         }
-        app.activate()
+        app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
         try await waitForWindow(named: "Claude Replicant")
         try await Task.sleep(for: .milliseconds(800))
-        let window = mainWindow()
-        window?.makeKeyAndOrderFront(nil)
-        app.activate()
-        try await Task.sleep(for: .milliseconds(300))
+        mainWindow()?.makeKeyAndOrderFront(nil)
+        app.activate(options: [.activateIgnoringOtherApps])
+        try await Task.sleep(for: .milliseconds(400))
+        log("key window: \(NSApp.keyWindow?.title ?? "none")")
 
         if phase == "missing" {
             dumpMenus(prefix: "missing")
@@ -43,48 +43,57 @@ final class UIHarnessTests: XCTestCase {
             return
         }
 
-        dumpMenus(prefix: "a")
+        dumpMenus(prefix: "a-idle")
         try captureWindows(prefix: "01-idle")
 
-        // Cmd-N: New Profile via a real key equivalent.
+        // Cmd-N: New Profile via its real key equivalent.
         sendKey(keyCode: 45, chars: "n", mods: .command)
         try await Task.sleep(for: .milliseconds(700))
         try captureWindows(prefix: "02-after-new-profile")
-        log("editing after Cmd-N: \(firstResponderDescription())")
+        log("first responder after Cmd-N: \(firstResponderDescription())")
 
-        // The new row should be in inline-rename mode; type a name, Return commits.
+        // The new row is in inline-rename mode; type a name, Return commits.
         typeText("Harness Profile")
         sendKey(keyCode: 36, chars: "\r")
         try await Task.sleep(for: .milliseconds(400))
         try captureWindows(prefix: "03-after-rename")
-        log("after commit: \(firstResponderDescription())")
 
-        // Cmd-Return: Open the selected profile (starts the fake Claude.app).
+        // Cmd-Return: open the selected profile (launches the fake Claude.app).
         sendKey(keyCode: 36, chars: "\r", mods: .command)
         try await Task.sleep(for: .milliseconds(1500))
         try captureWindows(prefix: "04-after-open")
         dumpMenus(prefix: "b-running")
 
-        // Shift-Cmd-Return: Stop it.
+        // Shift-Cmd-Return: stop it.
         sendKey(keyCode: 36, chars: "\r", mods: [.command, .shift])
         try await Task.sleep(for: .milliseconds(600))
         try captureWindows(prefix: "05-after-stop")
 
-        // Cmd-Z: undo the profile creation.
+        // Cmd-Z twice: undo rename, then undo creation.
+        sendKey(keyCode: 6, chars: "z", mods: .command)
+        try await Task.sleep(for: .milliseconds(300))
         sendKey(keyCode: 6, chars: "z", mods: .command)
         try await Task.sleep(for: .milliseconds(400))
         try captureWindows(prefix: "06-after-undo")
 
-        // Cmd-,: Settings window.
+        // Real menu dispatch: Start All via performActionForItem.
+        invokeMenuItem("Start All", inMenuTitled: "Profiles")
+        try await Task.sleep(for: .milliseconds(1500))
+        try captureWindows(prefix: "07-after-start-all")
+        dumpMenus(prefix: "c-all-running")
+
+        invokeMenuItem("Stop All", inMenuTitled: "Profiles")
+        try await Task.sleep(for: .milliseconds(600))
+        try captureWindows(prefix: "08-after-stop-all")
+
+        // Cmd-,: Settings window; capture; Cmd-W closes it.
         sendKey(keyCode: 43, chars: ",", mods: .command)
         try await Task.sleep(for: .milliseconds(900))
-        try captureWindows(prefix: "07-settings")
-        log("settings opened: \(NSApp.windows.map(\.title))")
+        try captureWindows(prefix: "09-settings")
 
-        // Close settings with Cmd-W, back at the main window.
         sendKey(keyCode: 13, chars: "w", mods: .command)
         try await Task.sleep(for: .milliseconds(400))
-        try captureWindows(prefix: "08-back-to-main")
+        try captureWindows(prefix: "10-back-to-main")
 
         writeReport()
         log("done; artifacts in \(outDir.path)")
@@ -95,7 +104,10 @@ final class UIHarnessTests: XCTestCase {
     /// Feeds a key event into the app's normal dispatch: window first,
     /// then menu key equivalents — exactly like a physical keypress.
     private func sendKey(keyCode: UInt16, chars: String, mods: NSEvent.ModifierFlags = []) {
-        guard let window = NSApp.keyWindow ?? mainWindow() else { return }
+        guard let window = NSApp.keyWindow ?? mainWindow() else {
+            log("sendKey: no window")
+            return
+        }
         for type: NSEvent.EventType in [.keyDown, .keyUp] {
             guard let event = NSEvent.keyEvent(
                 with: type, location: .zero, modifierFlags: mods,
@@ -117,7 +129,7 @@ final class UIHarnessTests: XCTestCase {
     }
 
     private func firstResponderDescription() -> String {
-        mainWindow().map { String(describing: $0.firstResponder) } ?? "no window"
+        NSApp.keyWindow.map { String(describing: $0.firstResponder) } ?? "no key window"
     }
 
     // MARK: - Menus
@@ -154,6 +166,25 @@ final class UIHarnessTests: XCTestCase {
         if mask.contains(.shift) { mods += "⇧" }
         if mask.contains(.command) { mods += "⌘" }
         return mods + key.uppercased()
+    }
+
+    /// Simulates choosing a menu item: the same dispatch a real click uses.
+    private func invokeMenuItem(_ title: String, inMenuTitled menuTitle: String) {
+        func search(_ menu: NSMenu) -> NSMenuItem? {
+            for item in menu.items {
+                if item.title == title { return item }
+                if let found = item.submenu.flatMap(search) { return found }
+            }
+            return nil
+        }
+        guard let menu = NSApp.mainMenu, let item = search(menu) else {
+            log("menu item '\(title)' not found")
+            return
+        }
+        guard let owner = item.menu else { return }
+        owner.update()
+        log("invoke '\(item.title)' enabled=\(item.isEnabled)")
+        _ = owner.performActionForItem(at: owner.index(of: item))
     }
 
     // MARK: - Windows
