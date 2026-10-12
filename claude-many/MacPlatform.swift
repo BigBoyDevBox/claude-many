@@ -6,9 +6,10 @@ import UniformTypeIdentifiers
 enum MacPlatform {
     /// Asks for an .app bundle with a real Open panel, sheeted to the key
     /// window when one exists. Returns nil when the user cancels.
+    @MainActor
     static func chooseApplicationBundle(
         startingAt directory: URL = URL(fileURLWithPath: "/Applications", isDirectory: true),
-        completion: @escaping (URL?) -> Void
+        completion: @escaping @MainActor @Sendable (URL?) -> Void
     ) {
         let panel = NSOpenPanel()
         panel.prompt = "Choose"

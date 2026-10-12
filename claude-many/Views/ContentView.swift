@@ -347,11 +347,24 @@ struct ContentView: View {
 
     private func registerRestore(_ target: [ClaudeProfile], name: String) {
         guard let undoManager else { return }
+        Self.registerRestore(on: undoManager, manager: manager, target: target, name: name)
+    }
+
+    private static func registerRestore(
+        on undoManager: UndoManager,
+        manager: ProfileManager,
+        target: [ClaudeProfile],
+        name: String
+    ) {
         let snapshotBefore = manager.profiles
         undoManager.registerUndo(withTarget: manager) { manager in
-            manager.restoreProfiles(target)
-            // Registered while undoing, this becomes the redo action.
-            registerRestore(snapshotBefore, name: name)
+            // registerUndo handlers are nonisolated; undo is only ever
+            // triggered from the menu bar or a shortcut on the main thread.
+            MainActor.assumeIsolated {
+                manager.restoreProfiles(target)
+                // Registered while undoing, this becomes the redo action.
+                registerRestore(on: undoManager, manager: manager, target: snapshotBefore, name: name)
+            }
         }
         undoManager.setActionName(name)
     }
