@@ -63,6 +63,8 @@ struct ContentView: View {
             Text(deleteAlertMessage)
         }
         .focusedSceneValue(\.profileCommands, commandContext)
+        .onAppear(syncCommandContext)
+        .onChange(of: commandContextSignature) { _, _ in syncCommandContext() }
         .onChange(of: nameFieldFocused) { _, focused in
             // Clicking elsewhere commits an in-progress rename, like Finder.
             if !focused { commitEditing() }
@@ -154,6 +156,20 @@ struct ContentView: View {
         context.stopAll = manager.stopAll
         context.openProfilesFolder = openProfilesFolder
         return context
+    }
+
+    /// Everything the command context depends on, so `onChange` republishes
+    /// it to the shared command center on every relevant state change.
+    private var commandContextSignature: String {
+        selection.sorted { $0.uuidString < $1.uuidString }.map(\.uuidString).joined()
+            + "|" + (editingID?.uuidString ?? "")
+            + "|" + manager.profiles.map { "\($0.id.uuidString)=\($0.label)" }.joined()
+            + "|" + manager.runningProfileIDs.sorted { $0.uuidString < $1.uuidString }.map(\.uuidString).joined()
+            + "|" + (manager.bundleExists ? "1" : "0")
+    }
+
+    private func syncCommandContext() {
+        ProfileCommandCenter.shared.context = commandContext
     }
 
     private func deleteTitle(for deletables: [ClaudeProfile]) -> String {
