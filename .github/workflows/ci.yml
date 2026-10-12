@@ -32,7 +32,7 @@ jobs:
           plist="build/Claude Replicant.app/Contents/Info.plist"
           [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$plist")" = 'Claude Replicant' ]
           [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$plist")" = 'claude-replicant' ]
-          [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" = 'com.swissgrammie.claude-many' ]
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" = 'ch.lkmc.ClaudeReplicant' ]
           test -s "build/Claude Replicant.app/Contents/Resources/AppIcon.icns"
       - name: Check universal binary
         run: |

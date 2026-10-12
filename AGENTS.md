@@ -10,8 +10,8 @@ pins it). Deployment target is macOS 14+. The project is a plain
   builds a universal Release app into `build/Claude Replicant.app` and ad-hoc
   signs it. `--install` replaces `/Applications/Claude Replicant.app`.
 - `scripts/release.sh X.Y.Z [--push]` bumps `MARKETING_VERSION` and
-  `CURRENT_PROJECT_VERSION` in `project.pbxproj`, verifies, commits, and
-  tags.
+  `CURRENT_PROJECT_VERSION` in `project.pbxproj` and the README version
+  marker, verifies, commits, and tags.
 - `xcodebuild -project claude-many.xcodeproj -scheme claude-many
   -destination 'platform=macOS' test` runs the tests directly.
 - The live smoke test (`claude-manyTests/SmokeTests.swift`) launches real
@@ -21,9 +21,10 @@ pins it). Deployment target is macOS 14+. The project is a plain
 
 ## Architecture
 
-- Branding: Claude Replicant, executable `claude-replicant`. The project,
-  scheme, Swift module, bundle identifier, and `Claude-Many` storage paths
-  retain their existing names to preserve upgrades and hosted tests.
+- Branding: Claude Replicant, executable `claude-replicant`, bundle
+  identifier `ch.lkmc.ClaudeReplicant`. The project, scheme, Swift module,
+  and `Claude-Many` storage paths retain their legacy `claude-many` names
+  to preserve upgrades and hosted tests.
 - Icon master: `media-sources/app-icon.png`; regenerate the committed Xcode
   icon sizes with `python3 scripts/generate-icons.py` (requires Pillow).
 - Mechanism: launch `/Applications/Claude.app/Contents/MacOS/Claude` with
