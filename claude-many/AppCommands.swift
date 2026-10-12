@@ -43,46 +43,60 @@ extension FocusedValues {
     }
 }
 
+/// Single-window app, so the command context is effectively app-global:
+/// the view pushes the current selection state here and menu commands read
+/// it. `@FocusedValue` stays the primary lookup (correct if the app ever
+/// grows a second window); this is the deterministic fallback.
+@Observable
+final class ProfileCommandCenter {
+    static let shared = ProfileCommandCenter()
+    var context = ProfileCommandContext()
+}
+
 struct ProfileCommands: Commands {
-    @FocusedValue(\.profileCommands) private var context
+    @FocusedValue(\.profileCommands) private var focusedContext
+
+    private var context: ProfileCommandContext {
+        focusedContext ?? ProfileCommandCenter.shared.context
+    }
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
-            Button("New Profile") { context?.newProfile() }
+            Button("New Profile") { context.newProfile() }
                 .keyboardShortcut("n")
         }
 
         CommandMenu("Profiles") {
-            Button(context?.openTitle ?? "Open") { context?.openSelected() }
+            Button(context.openTitle) { context.openSelected() }
                 .keyboardShortcut(.return, modifiers: .command)
-                .disabled(context?.canOpen != true)
-            Button(context?.stopTitle ?? "Stop") { context?.stopSelected() }
+                .disabled(!context.canOpen)
+            Button(context.stopTitle) { context.stopSelected() }
                 .keyboardShortcut(.return, modifiers: [.command, .shift])
-                .disabled(context?.canStop != true)
-            Button("Rename…") { context?.renameSelected() }
+                .disabled(!context.canStop)
+            Button("Rename…") { context.renameSelected() }
                 .keyboardShortcut(.return, modifiers: [])
-                .disabled(context?.canRename != true)
-            Button(context?.deleteTitle ?? "Delete Profile…") { context?.deleteSelected() }
+                .disabled(!context.canRename)
+            Button(context.deleteTitle) { context.deleteSelected() }
                 .keyboardShortcut(.delete, modifiers: .command)
-                .disabled(context?.canDelete != true)
+                .disabled(!context.canDelete)
 
             Divider()
 
-            Button("Reveal in Finder") { context?.revealSelected() }
-                .disabled(context?.canReveal != true)
-            Button("Copy Data Folder Path") { context?.copyPathSelected() }
-                .disabled(context?.canCopyPath != true)
+            Button("Reveal in Finder") { context.revealSelected() }
+                .disabled(!context.canReveal)
+            Button("Copy Data Folder Path") { context.copyPathSelected() }
+                .disabled(!context.canCopyPath)
 
             Divider()
 
-            Button("Start All") { context?.startAll() }
-                .disabled(context?.canStartAll != true)
-            Button("Stop All") { context?.stopAll() }
-                .disabled(context?.canStopAll != true)
+            Button("Start All") { context.startAll() }
+                .disabled(!context.canStartAll)
+            Button("Stop All") { context.stopAll() }
+                .disabled(!context.canStopAll)
 
             Divider()
 
-            Button("Open Profiles Folder in Finder") { context?.openProfilesFolder() }
+            Button("Open Profiles Folder in Finder") { context.openProfilesFolder() }
         }
 
         CommandGroup(replacing: .help) {
