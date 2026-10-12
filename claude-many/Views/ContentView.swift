@@ -63,7 +63,7 @@ struct ContentView: View {
             Text(deleteAlertMessage)
         }
         .focusedSceneValue(\.profileCommands, commandContext)
-        .onAppear(syncCommandContext)
+        .onAppear(perform: syncCommandContext)
         .onChange(of: commandContextSignature) { _, _ in syncCommandContext() }
         .onChange(of: nameFieldFocused) { _, focused in
             // Clicking elsewhere commits an in-progress rename, like Finder.
@@ -161,11 +161,15 @@ struct ContentView: View {
     /// Everything the command context depends on, so `onChange` republishes
     /// it to the shared command center on every relevant state change.
     private var commandContextSignature: String {
-        selection.sorted { $0.uuidString < $1.uuidString }.map(\.uuidString).joined()
-            + "|" + (editingID?.uuidString ?? "")
-            + "|" + manager.profiles.map { "\($0.id.uuidString)=\($0.label)" }.joined()
-            + "|" + manager.runningProfileIDs.sorted { $0.uuidString < $1.uuidString }.map(\.uuidString).joined()
-            + "|" + (manager.bundleExists ? "1" : "0")
+        let selectionPart = selection.sorted { $0.uuidString < $1.uuidString }
+            .map(\.uuidString).joined()
+        let profilePart = manager.profiles.map { "\($0.id.uuidString)=\($0.label)" }.joined()
+        let runningPart = manager.runningProfileIDs.sorted { $0.uuidString < $1.uuidString }
+            .map(\.uuidString).joined()
+        let editingPart = editingID?.uuidString ?? ""
+        let bundlePart = manager.bundleExists ? "1" : "0"
+        return [selectionPart, editingPart, profilePart, runningPart, bundlePart]
+            .joined(separator: "|")
     }
 
     private func syncCommandContext() {
