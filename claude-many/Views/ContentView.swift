@@ -9,7 +9,7 @@ struct ContentView: View {
     @State private var editingDraft = ""
     @State private var pendingDeleteIDs: Set<UUID> = []
     @State private var showingDeleteConfirm = false
-    @Environment(\.undoManager) private var undoManager
+    @Environment(\.undoManager) private var envUndoManager
     @Environment(\.openSettings) private var openSettings
     @FocusState private var nameFieldFocused: Bool
 
@@ -343,6 +343,14 @@ struct ContentView: View {
         }
         guard manager.profiles != before else { return }
         registerRestore(before, name: actionName)
+    }
+
+    /// The window's own undo manager is the canonical place for edits: the
+    /// Edit menu's Undo/Redo items route to it through the responder chain,
+    /// and it lazily exists for every NSWindow. The environment value is a
+    /// (possibly bridged) shortcut to the same object when populated.
+    private var undoManager: UndoManager? {
+        envUndoManager ?? NSApp.keyWindow?.undoManager ?? NSApp.mainWindow?.undoManager
     }
 
     private func registerRestore(_ target: [ClaudeProfile], name: String) {
