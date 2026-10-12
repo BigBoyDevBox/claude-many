@@ -3,9 +3,16 @@ import AppKit
 
 @main
 struct ClaudeReplicantApp: App {
-    @State private var manager = ProfileManager()
+    @State private var manager: ProfileManager
     @State private var undoManager = UndoManager()
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
+    init() {
+        // Built in init() rather than as a property initializer: SILGen
+        // crashes evaluating the manager's default arguments in the @State
+        // initializer context on Xcode 16.4.
+        _manager = State(initialValue: ProfileManager())
+    }
 
     var body: some Scene {
         // A single management window, like System Settings: the profile list

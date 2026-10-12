@@ -66,19 +66,22 @@ final class ProfileManager {
 
     // MARK: Init
 
+    // `defaults` stays an Optional: the compiler crashes emitting
+    // `UserDefaults.standard` as a default argument inside a @State
+    // property initializer on Xcode 16.4.
     init(
         store: ProfileStore? = nil,
         launcher: any ClaudeLauncher = RealClaudeLauncher(),
         claudeBundleURL: URL? = nil,
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults? = nil,
         dataRootDirectory: URL = ProfileManager.profilesRootDirectory
     ) {
         self.store = store
             ?? ProfileStore(fileURL: Self.appSupportDirectory.appendingPathComponent("profiles.json"))
         self.launcher = launcher
-        self.defaults = defaults
+        self.defaults = defaults ?? .standard
         self.dataRootDirectory = dataRootDirectory
-        self.claudeBundleURL = claudeBundleURL ?? Self.storedBundleURL(in: defaults)
+        self.claudeBundleURL = claudeBundleURL ?? Self.storedBundleURL(in: self.defaults)
     }
 
     private static func storedBundleURL(in defaults: UserDefaults) -> URL {
