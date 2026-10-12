@@ -1,8 +1,13 @@
 # Claude Replicant
 
+> [!IMPORTANT]
+> LLM disclosure: This codebase was written with substantial help from large language models: AI coding agents working from the [`AGENTS.md`](AGENTS.md) brief in this repo.
+
 *Give Claude the Double Impact.*
 
 <img src="media-sources/app-icon.png" alt="Claude Replicant icon with paired JCVD portraits" width="160" align="right">
+
+**Latest release:** v<!-- version -->1.0.0<!-- /version --> · [Download](https://github.com/L-K-M/claude-many/releases/latest)
 
 Run multiple Claude Desktop instances side by side on one Mac, each logged
 into a different account. There is no fixed limit — you add one profile per
@@ -76,9 +81,9 @@ scripts/build.sh --install  # also installs to /Applications
 ```
 
 Or open `claude-many.xcodeproj` in Xcode and run the `claude-many` scheme.
-The executable is `claude-replicant`. The project, scheme, Swift module, and
-bundle identifier keep their legacy names so hosted tests and upgrades
-continue to work.
+The executable is `claude-replicant`. The project, scheme, and Swift module
+keep their legacy `claude-many` names so hosted tests and upgrades continue
+to work. The bundle identifier is `ch.lkmc.ClaudeReplicant`.
 
 The icon master is `media-sources/app-icon.png`. To regenerate the Xcode icon
 sizes, run `python3 scripts/generate-icons.py` with Pillow installed.

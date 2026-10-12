@@ -74,9 +74,14 @@ sed -E -i '' \
   -e "s/^([[:space:]]*CURRENT_PROJECT_VERSION = )[0-9]+;/\1$next_build;/" \
   "$PBXPROJ"
 
+# Keep the README "Latest release" version marker in step.
+if grep -q '<!-- version -->' README.md; then
+  sed -E -i '' "s|(<!-- version -->)[^<]*(<!-- /version -->)|\1$version\2|" README.md
+fi
+
 "$SCRIPT_DIR/build.sh" --clean
 
-git add "$PBXPROJ"
+git add "$PBXPROJ" README.md
 git commit -s -m "Release Claude Replicant $version" \
   -m "Prepare the native macOS release metadata."
 git tag -a "$tag" -m "Claude Replicant $version"
