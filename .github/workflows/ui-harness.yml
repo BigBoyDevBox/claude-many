@@ -36,8 +36,9 @@ jobs:
             {"dataDirectory":"/Users/runner/Library/Application Support/Claude-Many/Profiles/personal","id":"22222222-2222-4222-8222-222222222222","label":"Personal"}
           ]
           JSON
+          echo full > /tmp/harness-phase
 
-      - name: Run UI harness inside the real app
+      - name: Harness pass 1 — full interaction flow
         run: |
           set -o pipefail
           xcodebuild -project claude-many.xcodeproj -scheme claude-many \
@@ -45,7 +46,18 @@ jobs:
             -derivedDataPath build/DerivedData test \
             -only-testing:claude-manyTests/UIHarnessTests 2>&1 | tee harness.log | tail -120
 
+      - name: Harness pass 2 — Claude.app missing
+        run: |
+          set -o pipefail
+          sudo rm -rf "/Applications/Claude.app"
+          echo missing > /tmp/harness-phase
+          xcodebuild -project claude-many.xcodeproj -scheme claude-many \
+            -destination 'platform=macOS' \
+            -derivedDataPath build/DerivedData test \
+            -only-testing:claude-manyTests/UIHarnessTests 2>&1 | tee -a harness.log | tail -60
+
       - name: Copy artifacts
+        if: always()
         run: |
           mkdir -p harness-out
           cp -R "$HOME/ui-harness" harness-out/ 2>/dev/null || true
@@ -53,6 +65,7 @@ jobs:
           screencapture -x harness-out/desktop.png 2>/dev/null || echo "screencapture unavailable"
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: ui-harness
           path: harness-out/

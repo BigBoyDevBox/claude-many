@@ -4,8 +4,8 @@ import AppKit
 /// SCRATCH-BRANCH ONLY — visual/interaction harness, never merged.
 /// Runs inside the real app process (hosted test): dumps the menu bar,
 /// captures real windows to PNG (frame view, so titlebar + toolbar included),
-/// and drives the UI through the responder chain (sendAction on menu items,
-/// insertText/insertNewline for typing). No accessibility permissions needed.
+/// and drives the UI with synthesized NSEvents through NSApp.sendEvent —
+/// key equivalents, arrows and text all route like real input.
 @MainActor
 final class UIHarnessTests: XCTestCase {
     private var outDir: URL {
@@ -13,6 +13,11 @@ final class UIHarnessTests: XCTestCase {
             .appendingPathComponent("ui-harness", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
+    }
+
+    private var phase: String {
+        (try? String(contentsOfFile: "/tmp/harness-phase", encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? "full"
     }
 
     private func log(_ message: String) {
@@ -28,56 +33,99 @@ final class UIHarnessTests: XCTestCase {
         try await waitForWindow(named: "Claude Replicant")
         try await Task.sleep(for: .milliseconds(800))
         let window = mainWindow()
+        window?.makeKeyAndOrderFront(nil)
+        app.activate()
+        try await Task.sleep(for: .milliseconds(300))
 
-        dumpMenus()
+        if phase == "missing" {
+            dumpMenus(prefix: "missing")
+            try captureWindows(prefix: "90-missing-bundle")
+            return
+        }
+
+        dumpMenus(prefix: "a")
         try captureWindows(prefix: "01-idle")
 
-        // File > New Profile via the actual menu item.
-        let newItem = findMenuItem { $0.title == "New Profile" }
-        invokeMenuItem(newItem)
+        // Cmd-N: New Profile via a real key equivalent.
+        sendKey(keyCode: 45, chars: "n", mods: .command)
         try await Task.sleep(for: .milliseconds(700))
         try captureWindows(prefix: "02-after-new-profile")
+        log("editing after Cmd-N: \(firstResponderDescription())")
 
         // The new row should be in inline-rename mode; type a name, Return commits.
         typeText("Harness Profile")
-        sendAction(#selector(NSText.insertNewline(_:)))
+        sendKey(keyCode: 36, chars: "\r")
         try await Task.sleep(for: .milliseconds(400))
         try captureWindows(prefix: "03-after-rename")
+        log("after commit: \(firstResponderDescription())")
 
-        // Start the new profile via its row button (fake Claude.app installed by CI).
-        let started = clickButton(titled: "Start", in: window, lastMatch: true)
-        log("clicked row Start: \(started)")
+        // Cmd-Return: Open the selected profile (starts the fake Claude.app).
+        sendKey(keyCode: 36, chars: "\r", mods: .command)
         try await Task.sleep(for: .milliseconds(1500))
-        try captureWindows(prefix: "04-after-start")
+        try captureWindows(prefix: "04-after-open")
+        dumpMenus(prefix: "b-running")
 
-        // Stop it again via the Stop button.
-        let stopped = clickButton(titled: "Stop", in: window, lastMatch: true)
-        log("clicked row Stop: \(stopped)")
-        try await Task.sleep(for: .milliseconds(500))
+        // Shift-Cmd-Return: Stop it.
+        sendKey(keyCode: 36, chars: "\r", mods: [.command, .shift])
+        try await Task.sleep(for: .milliseconds(600))
         try captureWindows(prefix: "05-after-stop")
 
-        // Edit > Undo: undoes the profile creation.
-        let undoItem = findMenuItem { $0.action.map { NSStringFromSelector($0) == "undo:" } ?? false }
-        invokeMenuItem(undoItem)
+        // Cmd-Z: undo the profile creation.
+        sendKey(keyCode: 6, chars: "z", mods: .command)
         try await Task.sleep(for: .milliseconds(400))
         try captureWindows(prefix: "06-after-undo")
 
-        // Settings via the Settings scene's selector (what Cmd-, sends).
-        sendAction(NSSelectorFromString("showSettingsWindow:"))
-        try await Task.sleep(for: .milliseconds(500))
-        sendAction(NSSelectorFromString("showPreferencesWindow:"))
+        // Cmd-,: Settings window.
+        sendKey(keyCode: 43, chars: ",", mods: .command)
         try await Task.sleep(for: .milliseconds(900))
         try captureWindows(prefix: "07-settings")
+        log("settings opened: \(NSApp.windows.map(\.title))")
+
+        // Close settings with Cmd-W, back at the main window.
+        sendKey(keyCode: 13, chars: "w", mods: .command)
+        try await Task.sleep(for: .milliseconds(400))
+        try captureWindows(prefix: "08-back-to-main")
 
         writeReport()
         log("done; artifacts in \(outDir.path)")
     }
 
+    // MARK: - Synthesized input
+
+    /// Feeds a key event into the app's normal dispatch: window first,
+    /// then menu key equivalents — exactly like a physical keypress.
+    private func sendKey(keyCode: UInt16, chars: String, mods: NSEvent.ModifierFlags = []) {
+        guard let window = NSApp.keyWindow ?? mainWindow() else { return }
+        for type: NSEvent.EventType in [.keyDown, .keyUp] {
+            guard let event = NSEvent.keyEvent(
+                with: type, location: .zero, modifierFlags: mods,
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil,
+                characters: chars,
+                charactersIgnoringModifiers: chars.lowercased(),
+                isARepeat: false, keyCode: keyCode
+            ) else { continue }
+            NSApp.sendEvent(event)
+        }
+    }
+
+    /// Sends each character through the field editor, like real typing.
+    private func typeText(_ text: String) {
+        for character in text {
+            NSApp.sendAction(#selector(NSText.insertText(_:)), to: nil, from: String(character) as NSString)
+        }
+    }
+
+    private func firstResponderDescription() -> String {
+        mainWindow().map { String(describing: $0.firstResponder) } ?? "no window"
+    }
+
     // MARK: - Menus
 
-    private func dumpMenus() {
+    private func dumpMenus(prefix: String) {
         var lines: [String] = []
         func walk(_ menu: NSMenu, depth: Int) {
+            menu.update()
             for item in menu.items {
                 let pad = String(repeating: "  ", count: depth)
                 if item.isSeparatorItem {
@@ -94,8 +142,9 @@ final class UIHarnessTests: XCTestCase {
         }
         if let main = NSApp.mainMenu { walk(main, depth: 0) }
         let text = lines.joined(separator: "\n")
-        try? text.write(to: outDir.appendingPathComponent("menus.txt"), atomically: true, encoding: .utf8)
-        log("menu dump:\n\(text)")
+        try? text.write(to: outDir.appendingPathComponent("menus-\(prefix).txt"),
+                        atomically: true, encoding: .utf8)
+        log("menu dump (\(prefix)):\n\(text)")
     }
 
     private func describe(key: String, mask: NSEvent.ModifierFlags) -> String {
@@ -107,44 +156,7 @@ final class UIHarnessTests: XCTestCase {
         return mods + key.uppercased()
     }
 
-    private func findMenuItem(matching predicate: (NSMenuItem) -> Bool) -> NSMenuItem? {
-        func search(_ menu: NSMenu) -> NSMenuItem? {
-            for item in menu.items {
-                if predicate(item) { return item }
-                if let found = item.submenu.flatMap(search) { return found }
-            }
-            return nil
-        }
-        return NSApp.mainMenu.flatMap(search)
-    }
-
-    private func invokeMenuItem(_ item: NSMenuItem?) {
-        guard let item else {
-            log("invokeMenuItem: item not found")
-            return
-        }
-        log("invoking menu item '\(item.title)' action=\(item.action.map(NSStringFromSelector) ?? "nil")")
-        if let action = item.action {
-            NSApp.sendAction(action, to: item.target, from: item)
-        } else if let menu = item.menu {
-            _ = menu.performActionForItem(at: menu.index(of: item))
-        }
-    }
-
-    // MARK: - Responder chain input
-
-    /// Sends each character through the field editor, like real typing.
-    private func typeText(_ text: String) {
-        for character in text {
-            NSApp.sendAction(#selector(NSText.insertText(_:)), to: nil, from: String(character) as NSString)
-        }
-    }
-
-    private func sendAction(_ selector: Selector) {
-        NSApp.sendAction(selector, to: nil, from: nil)
-    }
-
-    // MARK: - Windows / views
+    // MARK: - Windows
 
     private func mainWindow() -> NSWindow? {
         NSApp.windows.first { $0.title == "Claude Replicant" }
@@ -168,7 +180,7 @@ final class UIHarnessTests: XCTestCase {
         }
     }
 
-    /// Captures the whole window — frame view includes titlebar and toolbar.
+    /// Captures the whole window — the frame view includes titlebar and toolbar.
     private func capture(window: NSWindow, file: String) throws {
         window.displayIfNeeded()
         window.contentView?.layoutSubtreeIfNeeded()
@@ -181,25 +193,9 @@ final class UIHarnessTests: XCTestCase {
         log("captured \(file) \(Int(root.bounds.width))x\(Int(root.bounds.height))")
     }
 
-    private func clickButton(titled title: String, in window: NSWindow?, lastMatch: Bool) -> Bool {
-        guard let content = window?.contentView else { return false }
-        var matches: [NSButton] = []
-        func collect(_ view: NSView) {
-            if let button = view as? NSButton,
-               button.title == title, button.isEnabled, !button.isHidden {
-                matches.append(button)
-            }
-            view.subviews.forEach(collect)
-        }
-        collect(content)
-        guard let button = lastMatch ? matches.last : matches.first else { return false }
-        button.performClick(nil)
-        return true
-    }
-
     private func writeReport() {
         let report = NSApp.windows.map {
-            "\($0.windowNumber): '\($0.title)' visible=\($0.isVisible) type=\(type(of: $0)) firstResponder=\(String(describing: $0.firstResponder))"
+            "\($0.windowNumber): '\($0.title)' visible=\($0.isVisible) key=\($0.isKeyWindow) type=\(type(of: $0)) firstResponder=\(String(describing: $0.firstResponder))"
         }
         try? report.joined(separator: "\n").write(
             to: outDir.appendingPathComponent("windows.txt"), atomically: true, encoding: .utf8)
