@@ -48,6 +48,7 @@ extension FocusedValues {
 /// it. `@FocusedValue` stays the primary lookup (correct if the app ever
 /// grows a second window); this is the deterministic fallback.
 @Observable
+@MainActor
 final class ProfileCommandCenter {
     static let shared = ProfileCommandCenter()
     var context = ProfileCommandContext()
