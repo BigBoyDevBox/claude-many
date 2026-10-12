@@ -36,7 +36,7 @@ final class UIHarnessTests: XCTestCase {
         mainWindow()?.makeKeyAndOrderFront(nil)
         app.activate()
         try await Task.sleep(for: .milliseconds(400))
-        log("key window: \(NSApp.keyWindow?.title ?? "none")")
+        log("key window: \(NSApp.keyWindow?.title ?? "none") active=\(app.isActive)")
 
         if phase == "missing" {
             dumpMenus(prefix: "missing")
@@ -47,6 +47,14 @@ final class UIHarnessTests: XCTestCase {
         dumpMenus(prefix: "a-idle")
         try captureWindows(prefix: "01-idle")
         popAndDumpMenu(titled: "Profiles", prefix: "profiles-empty-selection")
+
+        // Tab into the list: tests whether FocusedValue needs a focused
+        // view inside the scene to resolve.
+        sendKey(keyCode: 48, chars: "\t")
+        try await Task.sleep(for: .milliseconds(300))
+        log("first responder after Tab: \(firstResponderDescription())")
+        probeContext("after-tab")
+        popAndDumpMenu(titled: "Profiles", prefix: "profiles-after-tab")
 
         // Cmd-N: New Profile via its real key equivalent.
         sendKey(keyCode: 45, chars: "n", mods: .command)
