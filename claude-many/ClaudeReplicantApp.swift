@@ -4,7 +4,8 @@ import AppKit
 @main
 struct ClaudeReplicantApp: App {
     @State private var manager: ProfileManager
-    @State private var undoManager = UndoManager()
+    // Optional because the undoManager environment key is UndoManager?-typed.
+    private let undoManager: UndoManager? = UndoManager()
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     init() {
@@ -17,7 +18,7 @@ struct ClaudeReplicantApp: App {
     var body: some Scene {
         // A single management window, like System Settings: the profile list
         // is the whole app, so opening additional copies of it adds nothing.
-        Window(Text(AppBranding.name), id: "main") {
+        Window(AppBranding.name, id: "main") {
             ContentView(manager: manager)
                 .environment(\.undoManager, undoManager)
                 .onAppear { manager.load() }
